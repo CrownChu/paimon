@@ -115,7 +115,7 @@ under the License.
     <repositories>
         <repository>
             <id>eslib-github</id>
-            <url>https://raw.githubusercontent.com/CrownChu/es-paimon-lib-releases/main/repository</url>
+            <url>https://raw.githubusercontent.com/CrownChu/es-paimon-lib-releases/eslib-1.0.6/repository</url>
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </repository>

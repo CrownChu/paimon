@@ -32,8 +32,8 @@ indexed according to their data type and per-field options.
 
 > **Plugin required.** `es-index` is provided by this `paimon-eslib` module. Make sure `paimon-eslib`
 > is on the classpath of your Spark or Flink job (and of any reader) before building or querying an
-> `es-index`. The module and its ESLib/Lucene dependencies require Java 11 or newer; the root Maven
-> build intentionally skips `paimon-eslib` when it runs on JDK 8.
+> `es-index`. The module and its ESLib/Lucene dependencies require Java 11 or newer. It is excluded
+> from the default Maven reactor; build it explicitly with `-Ppaimon-eslib` on JDK 11 or newer.
 
 `paimon-eslib` is distributed as a thin JAR and does not embed ESLib or Lucene classes. Maven and
 Gradle resolve these dependencies transitively. When installing JARs manually, place `eslib-core`,
