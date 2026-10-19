@@ -18,16 +18,15 @@
 
 package org.apache.paimon.eslib.index;
 
+import org.apache.paimon.eslib.internal.model.BuiltinAnalyzer;
+import org.apache.paimon.eslib.internal.model.FieldIndexConfig;
+import org.apache.paimon.eslib.internal.model.ScalarFieldType;
+import org.apache.paimon.eslib.internal.model.VectorAlgorithm;
 import org.apache.paimon.globalindex.GlobalIndexIOMeta;
 import org.apache.paimon.options.Options;
-import org.apache.paimon.predicate.VectorSearch;
 import org.apache.paimon.types.DataField;
 import org.apache.paimon.types.DataTypes;
 
-import org.elasticsearch.eslib.api.model.BuiltinAnalyzer;
-import org.elasticsearch.eslib.api.model.FieldIndexConfig;
-import org.elasticsearch.eslib.api.model.ScalarFieldType;
-import org.elasticsearch.eslib.api.model.VectorAlgorithm;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -87,6 +86,7 @@ class ESIndexFileMetaTest {
                                 configs));
 
         assertThat(parsed.hasFieldConfigs()).isTrue();
+        assertThat(parsed.backend()).isEqualTo(ESIndexBuilderFactory.ELASTICPP);
         assertThat(parsed.indexedFieldNames()).containsExactly("embedding");
         assertThat(parsed.indexedFieldTypes()).containsExactly("ARRAY<FLOAT>");
         FieldIndexConfig vector = parsed.fieldConfigs().get("embedding");
@@ -161,7 +161,7 @@ class ESIndexFileMetaTest {
     }
 
     @Test
-    void versionOneVectorMetadataRejectsChangedFixedDimension() throws Exception {
+    void legacyJavaMetadataRequiresOriginalReaderOrRebuild() throws Exception {
         FieldIndexConfig config =
                 FieldIndexConfig.builder("embedding", FieldIndexConfig.IndexType.VECTOR)
                         .algorithm(VectorAlgorithm.HNSW)
@@ -182,33 +182,22 @@ class ESIndexFileMetaTest {
 
         List<DataField> currentFields =
                 List.of(new DataField(0, "embedding", DataTypes.VECTOR(3, DataTypes.FLOAT())));
-        ESIndexGlobalIndexReader reader =
-                new ESIndexGlobalIndexReader(
-                        meta -> null,
-                        List.of(
-                                new GlobalIndexIOMeta(
-                                        new org.apache.paimon.fs.Path("/tmp/legacy.index"),
-                                        1L,
-                                        bytes.toByteArray())),
-                        currentFields,
-                        new ESIndexOptions(currentFields, new Options()));
-        try {
-            assertThatThrownBy(
-                            () ->
-                                    reader.visitVectorSearch(
-                                                    new VectorSearch(
-                                                            new float[] {1.0f, 2.0f, 3.0f},
-                                                            1,
-                                                            "embedding"))
-                                            .join())
-                    .hasCauseInstanceOf(IllegalStateException.class)
-                    .hasRootCauseMessage(
-                            "The persisted es-index for field 'embedding' is incompatible with "
-                                    + "the current schema and cannot safely answer vector search. "
-                                    + "Rebuild the es-index after the schema change.");
-        } finally {
-            reader.close();
-        }
+        assertThatThrownBy(
+                        () ->
+                                new ESIndexGlobalIndexReader(
+                                        meta -> null,
+                                        List.of(
+                                                new GlobalIndexIOMeta(
+                                                        new org.apache.paimon.fs.Path(
+                                                                "/tmp/legacy.index"),
+                                                        1L,
+                                                        bytes.toByteArray())),
+                                        currentFields,
+                                        new ESIndexOptions(currentFields, new Options())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage(
+                        "Legacy Java es-index archives require the original reader or a rebuild; "
+                                + "this module directly reads native ESM1 v3 archives.");
     }
 
     @Test

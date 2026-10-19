@@ -28,8 +28,6 @@ import org.apache.paimon.types.DataTypes;
 
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
@@ -48,17 +46,22 @@ class ESIndexGlobalIndexerExecutorTest {
             Arrays.asList(new DataField(0, "k", DataTypes.STRING()));
 
     private static List<GlobalIndexIOMeta> oneFile() throws IOException {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        try (DataOutputStream out = new DataOutputStream(bytes)) {
-            out.writeInt(1);
-            byte[] name = "segments_1".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            out.writeInt(name.length);
-            out.write(name);
-            out.writeLong(0L);
-            out.writeLong(0L);
+        java.nio.file.Path segment = java.nio.file.Files.createTempFile("segments_", ".test");
+        try {
+            byte[] metadata =
+                    ESIndexFileMeta.write(
+                            new java.io.File[] {segment.toFile()},
+                            List.of("k"),
+                            List.of("STRING"),
+                            new ESIndexOptions(FIELDS, new Options()).getFieldConfigs());
+            long size =
+                    ESIndexFileMeta.read(metadata)
+                            .fileOffsets()
+                            .get(segment.getFileName().toString())[0];
+            return List.of(new GlobalIndexIOMeta(new Path("/tmp/none.index"), size, metadata));
+        } finally {
+            java.nio.file.Files.delete(segment);
         }
-        return Arrays.asList(
-                new GlobalIndexIOMeta(new Path("/tmp/none.index"), 0L, bytes.toByteArray()));
     }
 
     @Test

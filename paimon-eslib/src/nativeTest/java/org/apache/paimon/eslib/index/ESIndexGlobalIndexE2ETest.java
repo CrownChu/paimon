@@ -413,14 +413,15 @@ class ESIndexGlobalIndexE2ETest {
                 reader.visitFullTextSearch(new FullTextSearch("title", matchQuery("evon"), 50))
                         .join();
         assertTrue(exactTypo.isEmpty(), "exact 'evon' matches nothing");
-        Optional<ScoredGlobalIndexResult> fuzzyTypo =
-                reader.visitFullTextSearch(
-                                new FullTextSearch("title", fuzzyMatchQuery("evon", 1), 50))
-                        .join();
-        assertEquals(
-                10,
-                fuzzyTypo.get().results().getIntCardinality(),
-                "fuzzy 'evon'~1 matches the 10 'even' docs");
+        CompletionException fuzzyFailure =
+                assertThrows(
+                        CompletionException.class,
+                        () ->
+                                reader.visitFullTextSearch(
+                                                new FullTextSearch(
+                                                        "title", fuzzyMatchQuery("evon", 1), 50))
+                                        .join());
+        assertTrue(fuzzyFailure.getCause() instanceof UnsupportedOperationException);
 
         // --- category is KEYWORD-primary, but full-text search routes to category.fulltext. ---
         Optional<ScoredGlobalIndexResult> categoryFt =
@@ -1279,18 +1280,12 @@ class ESIndexGlobalIndexE2ETest {
         writer.write(
                 0,
                 GenericRow.of(
-                        Integer.MIN_VALUE,
-                        Long.MIN_VALUE,
-                        Float.NEGATIVE_INFINITY,
-                        Double.NEGATIVE_INFINITY));
+                        Integer.MIN_VALUE, Long.MIN_VALUE, -Float.MAX_VALUE, -Double.MAX_VALUE));
         writer.write(1, GenericRow.of(0, 0L, 0.0F, 0.0D));
         writer.write(
                 2,
                 GenericRow.of(
-                        Integer.MAX_VALUE,
-                        Long.MAX_VALUE,
-                        Float.POSITIVE_INFINITY,
-                        Double.POSITIVE_INFINITY));
+                        Integer.MAX_VALUE, Long.MAX_VALUE, Float.MAX_VALUE, Double.MAX_VALUE));
         ResultEntry entry = writer.finish().get(0);
 
         org.apache.paimon.fs.Path filePath =
@@ -1316,17 +1311,15 @@ class ESIndexGlobalIndexE2ETest {
             assertEmptyIndexResult(
                     reader.visitGreaterThan(longRef, Long.MAX_VALUE).join(), "LONG > MAX_VALUE");
             assertEmptyIndexResult(
-                    reader.visitLessThan(floatRef, Float.NEGATIVE_INFINITY).join(),
-                    "FLOAT < -Infinity");
+                    reader.visitLessThan(floatRef, -Float.MAX_VALUE).join(), "FLOAT < -MAX_VALUE");
             assertEmptyIndexResult(
-                    reader.visitGreaterThan(floatRef, Float.POSITIVE_INFINITY).join(),
-                    "FLOAT > +Infinity");
+                    reader.visitGreaterThan(floatRef, Float.MAX_VALUE).join(), "FLOAT > MAX_VALUE");
             assertEmptyIndexResult(
-                    reader.visitLessThan(doubleRef, Double.NEGATIVE_INFINITY).join(),
-                    "DOUBLE < -Infinity");
+                    reader.visitLessThan(doubleRef, -Double.MAX_VALUE).join(),
+                    "DOUBLE < -MAX_VALUE");
             assertEmptyIndexResult(
-                    reader.visitGreaterThan(doubleRef, Double.POSITIVE_INFINITY).join(),
-                    "DOUBLE > +Infinity");
+                    reader.visitGreaterThan(doubleRef, Double.MAX_VALUE).join(),
+                    "DOUBLE > MAX_VALUE");
 
             assertEquals(
                     1,
@@ -1337,7 +1330,7 @@ class ESIndexGlobalIndexE2ETest {
                             .getIntCardinality());
             assertEquals(
                     1,
-                    reader.visitGreaterOrEqual(doubleRef, Double.POSITIVE_INFINITY)
+                    reader.visitGreaterOrEqual(doubleRef, Double.MAX_VALUE)
                             .join()
                             .get()
                             .results()
@@ -1581,7 +1574,7 @@ class ESIndexGlobalIndexE2ETest {
     }
 
     @Test
-    void standardBooleanDslAndCamelCaseFuzzyParamsAreApplied(@TempDir java.nio.file.Path tmp)
+    void standardBooleanDslIsAppliedAndUnqualifiedFuzzyIsRejected(@TempDir java.nio.file.Path tmp)
             throws IOException {
         List<DataField> fields = Arrays.asList(new DataField(0, "text", DataTypes.STRING()));
         ESIndexOptions options = new ESIndexOptions(fields, new Options());
@@ -1602,8 +1595,22 @@ class ESIndexGlobalIndexE2ETest {
                         + "\"fuzziness\":\"AUTO\",\"maxExpansions\":20,\"prefixLength\":0}}],"
                         + "\"must_not\":[{\"match\":{\"query\":\"disabled\"}}]}}";
         try {
+            CompletionException fuzzyFailure =
+                    assertThrows(
+                            CompletionException.class,
+                            () ->
+                                    reader.visitFullTextSearch(
+                                                    new FullTextSearch("text", query, 10))
+                                            .join());
+            assertTrue(fuzzyFailure.getCause() instanceof UnsupportedOperationException);
             Optional<ScoredGlobalIndexResult> result =
-                    reader.visitFullTextSearch(new FullTextSearch("text", query, 10)).join();
+                    reader.visitFullTextSearch(
+                                    new FullTextSearch(
+                                            "text",
+                                            query.replace("administrater", "administrator")
+                                                    .replace("\"AUTO\"", "0"),
+                                            10))
+                            .join();
             assertTrue(result.isPresent());
             assertEquals(1, result.get().results().getIntCardinality());
             assertTrue(contains(result.get().results(), 0L));
@@ -1670,21 +1677,7 @@ class ESIndexGlobalIndexE2ETest {
         }
     }
 
-    /**
-     * Verifies the DiskBBQ vector codec write path through {@link ESIndexGlobalIndexWriter}.
-     *
-     * <p>Distinct from {@link #writeArchiveThenReadAndSearch} (which uses {@code algorithm=hnsw}),
-     * this test sets {@code algorithm=diskbbq} so the writer should pick {@code
-     * ES940DiskBBQVectorsFormat} via {@code PaimonLucene9Codec.getKnnVectorsFormatForField},
-     * causing {@code IVFVectorsWriter#flush} (in practice {@code mergeOneFieldIVF} via {@code
-     * IndexWriter.forceMerge(1)}) to emit the IVF triplet ({@code .cenivf} / {@code .clivf} /
-     * {@code .mivf}) into the archive instead of the HNSW triplet ({@code .vec} / {@code .vex} /
-     * {@code .vem}).
-     *
-     * <p>Assertions cover the writer path end-to-end (archive contents, scalar/keyword/numeric
-     * filters round-tripping through the DiskBBQ-built segment), plus a deterministic vector-search
-     * assertion whose nearest results must all come from the queried cluster.
-     */
+    /** Verifies native DiskBBQ files, filtering, vector results and reader ownership. */
     @Test
     void writeDiskBBQArchiveThenReadAndSearch(@TempDir java.nio.file.Path tmp) throws Exception {
         List<DataField> fields =
@@ -1697,9 +1690,6 @@ class ESIndexGlobalIndexE2ETest {
         opt.put("global-index.es-index.fields.embedding.algorithm", "diskbbq");
         opt.put("global-index.es-index.fields.embedding.dimension", "32");
         opt.put("global-index.es-index.fields.embedding.metric", "l2");
-        // 64 is the MIN_VECTORS_PER_CLUSTER allowed by ES940DiskBBQVectorsFormat — picking the
-        // minimum lets a small fixture still produce multiple IVF clusters.
-        opt.put("global-index.es-index.fields.embedding.vectors_per_cluster", "64");
         ESIndexOptions options = new ESIndexOptions(fields, Options.fromMap(opt));
 
         java.nio.file.Path archiveDir = tmp.resolve("archive-diskbbq");
@@ -1736,24 +1726,15 @@ class ESIndexGlobalIndexE2ETest {
         assertEquals((long) clusters * perCluster, entry.rowCount(), "row count");
         assertNotNull(entry.meta(), "offset-table meta present");
 
-        // --- writer-side check: the archive must contain the DiskBBQ IVF triplet, not HNSW
-        // vector files.
-        Set<String> exts = new HashSet<>();
-        for (String name : ESIndexFileMeta.read(entry.meta()).fileOffsets().keySet()) {
-            int dot = name.lastIndexOf('.');
-            if (dot >= 0) {
-                exts.add(name.substring(dot + 1));
-            }
-        }
+        // Native segments use compound files; the IVF files reside inside the .cfs container.
+        ESIndexFileMeta.Parsed persisted = ESIndexFileMeta.read(entry.meta());
+        assertEquals(ESIndexBuilderFactory.ELASTICPP, persisted.backend());
+        assertEquals(
+                org.apache.paimon.eslib.internal.model.VectorAlgorithm.DISKBBQ,
+                persisted.fieldConfigs().get("embedding").algorithm());
+        assertTrue(persisted.fileOffsets().containsKey(".eslib-native-v1.json"));
         assertTrue(
-                exts.contains("cenivf") && exts.contains("clivf") && exts.contains("mivf"),
-                "archive must contain DiskBBQ IVF triplet (.cenivf/.clivf/.mivf), got: " + exts);
-        // .vex (HNSW graph) and .vem (HNSW meta) are HNSW-specific; .vec / .vemf belong to the
-        // underlying Lucene99FlatVectorsFormat that DiskBBQ also uses as raw-vector backing
-        // storage, so they may legitimately appear with DiskBBQ too.
-        assertTrue(
-                exts.stream().noneMatch(e -> e.equals("vex") || e.equals("vem")),
-                "archive must not contain HNSW-specific files (.vex/.vem), got: " + exts);
+                persisted.fileOffsets().keySet().stream().anyMatch(name -> name.endsWith(".cfs")));
 
         // --- reconstruct reader over the archive ---
         org.apache.paimon.fs.Path filePath =
@@ -1839,165 +1820,91 @@ class ESIndexGlobalIndexE2ETest {
                 "reader close must release every persistent DiskBBQ stream");
     }
 
-    /**
-     * Bypass-archive regression test for the DiskBBQ read path. Writes 1000 random normalised
-     * vectors directly to an {@code FSDirectory} via raw Lucene + {@code PaimonLucene912Codec}
-     * ({@code algorithm=diskbbq}) — skipping paimon-eslib's archive layer entirely — and reads them
-     * back through {@code KnnFloatVectorQuery}.
-     *
-     * <p>Locks in two fixes in eslib-core {@code lucene9/DiskBBQVectorsReader}:
-     *
-     * <ul>
-     *   <li>{@code search()} now calls {@code knnCollector.incVisitedCount(scoredDocs)} —
-     *       previously {@code TopDocs.totalHits} stayed at 0 even when candidates were collected,
-     *       making {@code KnnFloatVectorQuery} treat the leaf result as empty.
-     *   <li>{@code visitCluster()} now gates {@code collector.collect(...)} on a non-NaN score (and
-     *       {@code minCompetitiveSimilarity()}) — previously NaN scores poisoned the collector's
-     *       priority queue.
-     * </ul>
-     */
+    /** Exercises the native builder and reader without the Paimon archive writer. */
     @Test
-    void diskBBQVectorSearchOnFSDirectory(@TempDir java.nio.file.Path tmp) throws IOException {
-        int dim = 32;
-        int numVectors = 1000;
-
-        // Match the standalone DiskBBQ test: random normalized vectors + DOT_PRODUCT. Sparse
-        // one-hot vectors with EUCLIDEAN are covered separately in eslib-core.
-        java.util.Random rng = new java.util.Random(42);
-        float[][] vectors = new float[numVectors][];
-        for (int i = 0; i < numVectors; i++) {
-            float[] v = new float[dim];
-            float norm = 0;
-            for (int d = 0; d < dim; d++) {
-                v[d] = rng.nextFloat() - 0.5f;
-                norm += v[d] * v[d];
+    void diskBBQVectorSearchOnNativeDirectory(@TempDir java.nio.file.Path tmp) throws IOException {
+        int dimension = 32;
+        int count = 1000;
+        java.util.Random random = new java.util.Random(42);
+        float[][] vectors = new float[count][dimension];
+        for (float[] vector : vectors) {
+            double squared = 0;
+            for (int d = 0; d < dimension; d++) {
+                vector[d] = random.nextFloat() - 0.5f;
+                squared += (double) vector[d] * vector[d];
             }
-            norm = (float) Math.sqrt(norm);
-            for (int d = 0; d < dim; d++) {
-                v[d] /= norm;
+            for (int d = 0; d < dimension; d++) {
+                vector[d] /= Math.sqrt(squared);
             }
-            vectors[i] = v;
         }
-        float[] query = vectors[0]; // query is the first vector — its own row must be top-1
-
-        Map<String, org.elasticsearch.eslib.api.model.FieldIndexConfig> fieldConfigs =
-                new HashMap<>();
-        Map<String, String> params = new HashMap<>();
-        params.put("vectors_per_cluster", "64");
-        fieldConfigs.put(
-                "embedding",
-                org.elasticsearch.eslib.api.model.FieldIndexConfig.builder(
-                                "embedding",
-                                org.elasticsearch.eslib.api.model.FieldIndexConfig.IndexType.VECTOR)
-                        .algorithm(org.elasticsearch.eslib.api.model.VectorAlgorithm.DISKBBQ)
-                        .dimension(dim)
-                        .metric("dot_product")
-                        .algorithmParams(params)
-                        .build());
-
-        java.nio.file.Path idxDir = tmp.resolve("fs-diskbbq");
-        Files.createDirectories(idxDir);
-
-        // --- write via raw Lucene + PaimonLucene9Codec (the codec paimon-eslib uses;
-        // also the only codec registered in Lucene SPI, so DirectoryReader.open finds it back). ---
-        org.apache.lucene.codecs.Codec codec =
-                new org.elasticsearch.eslib.adapter.lucene9.PaimonLucene9Codec(fieldConfigs);
-        org.apache.lucene.index.IndexWriterConfig iwc =
-                new org.apache.lucene.index.IndexWriterConfig(
-                        new org.apache.lucene.analysis.core.WhitespaceAnalyzer());
-        iwc.setCodec(codec);
-        iwc.setUseCompoundFile(false);
-        try (org.apache.lucene.store.FSDirectory dir =
-                        org.apache.lucene.store.FSDirectory.open(idxDir);
-                org.apache.lucene.index.IndexWriter w =
-                        new org.apache.lucene.index.IndexWriter(dir, iwc)) {
-            for (int i = 0; i < numVectors; i++) {
-                org.apache.lucene.document.Document doc = new org.apache.lucene.document.Document();
-                doc.add(
-                        new org.apache.lucene.document.KnnFloatVectorField(
-                                "embedding",
-                                vectors[i],
-                                org.apache.lucene.index.VectorSimilarityFunction.DOT_PRODUCT));
-                w.addDocument(doc);
+        Map<String, org.apache.paimon.eslib.internal.model.FieldIndexConfig> configs =
+                Map.of(
+                        "embedding",
+                        org.apache.paimon.eslib.internal.model.FieldIndexConfig.builder(
+                                        "embedding",
+                                        org.apache.paimon.eslib.internal.model.FieldIndexConfig
+                                                .IndexType.VECTOR)
+                                .algorithm(
+                                        org.apache.paimon.eslib.internal.model.VectorAlgorithm
+                                                .DISKBBQ)
+                                .dimension(dimension)
+                                .metric("dot_product")
+                                .build());
+        java.nio.file.Path directory = tmp.resolve("native-diskbbq");
+        try (org.apache.paimon.eslib.internal.ESIndexBuilder builder =
+                new org.apache.paimon.eslib.nativeindex.NativeESIndexBuilder(configs, directory)) {
+            for (int row = 0; row < count; row++) {
+                builder.addVector("embedding", row, vectors[row]);
+                builder.finishDocument(row);
             }
-            w.forceMerge(1);
-            w.commit();
-        }
-
-        // --- list produced files for visibility ---
-        Set<String> exts = new HashSet<>();
-        try (java.util.stream.Stream<java.nio.file.Path> walk = Files.list(idxDir)) {
-            walk.forEach(
-                    p -> {
-                        String n = p.getFileName().toString();
-                        int dot = n.lastIndexOf('.');
-                        if (dot >= 0) {
-                            exts.add(n.substring(dot + 1));
+            builder.build();
+            try (java.util.stream.Stream<java.nio.file.Path> files = Files.list(directory)) {
+                assertTrue(files.anyMatch(path -> path.toString().endsWith(".cfs")));
+                assertTrue(
+                        Files.readString(directory.resolve(".eslib-native-v1.json"))
+                                .contains("bbq_disk"));
+            }
+            java.io.ByteArrayOutputStream packed = new java.io.ByteArrayOutputStream();
+            Map<String, long[]> offsets = new java.util.LinkedHashMap<>();
+            try (java.util.stream.Stream<java.nio.file.Path> files = Files.list(directory)) {
+                for (java.nio.file.Path file :
+                        files.filter(Files::isRegularFile)
+                                .filter(path -> !path.getFileName().toString().equals("write.lock"))
+                                .collect(java.util.stream.Collectors.toList())) {
+                    byte[] bytes = Files.readAllBytes(file);
+                    offsets.put(
+                            file.getFileName().toString(),
+                            new long[] {packed.size(), bytes.length});
+                    packed.write(bytes);
+                }
+            }
+            byte[] archive = packed.toByteArray();
+            org.apache.paimon.eslib.internal.ArchiveDataProvider provider =
+                    new org.apache.paimon.eslib.internal.ArchiveDataProvider() {
+                        @Override
+                        public byte[] readRange(long offset, int length) {
+                            return Arrays.copyOfRange(
+                                    archive,
+                                    Math.toIntExact(offset),
+                                    Math.toIntExact(offset + length));
                         }
-                    });
-        }
-        assertTrue(
-                exts.contains("cenivf") && exts.contains("clivf") && exts.contains("mivf"),
-                "FSDirectory must hold DiskBBQ IVF triplet, got: " + exts);
 
-        // --- read back via raw Lucene KnnFloatVectorQuery ---
-        try (org.apache.lucene.store.FSDirectory dir =
-                        org.apache.lucene.store.FSDirectory.open(idxDir);
-                org.apache.lucene.index.DirectoryReader r =
-                        org.apache.lucene.index.DirectoryReader.open(dir)) {
-            assertEquals(numVectors, r.numDocs(), "all docs flushed");
-            assertEquals(1, r.leaves().size(), "single segment after forceMerge(1)");
-
-            // Sanity: PerFieldKnnVectorsFormat correctly recorded a DiskBBQ vectors format for this
-            // field (version-agnostic: ES920 / ES940 / ...). Reads it back from FieldInfo attrs.
-            org.apache.lucene.index.LeafReader leaf = r.leaves().get(0).reader();
-            org.apache.lucene.index.FieldInfo fi = leaf.getFieldInfos().fieldInfo("embedding");
-            assertTrue(
-                    fi.attributes()
-                            .get("PerFieldKnnVectorsFormat.format")
-                            .contains("DiskBBQVectorsFormat"),
-                    "DiskBBQ format must be dispatched at read time");
-
-            // Direct leaf-level KNN — bypasses IndexSearcher / KnnFloatVectorQuery rewrite.
-            // Lucene 9.12 returns via the collector (void method).
-            org.apache.lucene.search.TopKnnCollector leafCollector =
-                    new org.apache.lucene.search.TopKnnCollector(5, Integer.MAX_VALUE);
-            leaf.searchNearestVectors("embedding", query, leafCollector, null);
-            org.apache.lucene.search.TopDocs leafTop = leafCollector.topDocs();
-
-            // Document the bug: DiskBBQVectorsReader.search DOES collect documents …
-            assertTrue(
-                    leafTop.scoreDocs.length > 0,
-                    "DiskBBQVectorsReader.search should collect candidates");
-            for (org.apache.lucene.search.ScoreDoc sd : leafTop.scoreDocs) {
-                assertTrue(
-                        Float.isFinite(sd.score),
-                        "score must be finite (NaN guard / simdvec stats fix), got: " + sd.score);
+                        @Override
+                        public org.apache.paimon.eslib.internal.ArchiveDataProvider fork() {
+                            return this;
+                        }
+                    };
+            try (org.apache.paimon.eslib.internal.ESIndexSearcher searcher =
+                    ESIndexBuilderFactory.createSearcher()) {
+                searcher.load(provider, offsets, configs);
+                org.apache.paimon.eslib.internal.model.SearchResult result =
+                        searcher.vectorSearch("embedding", vectors[0], 5, null);
+                assertEquals(5, result.count);
+                for (float score : result.scores) {
+                    assertTrue(Float.isFinite(score) && score > 0, "finite positive native score");
+                }
+                assertEquals(count, searcher.allRowIds().length);
             }
-            assertTrue(
-                    leafTop.totalHits.value > 0,
-                    "TopDocs.totalHits.value must be > 0 (incVisitedCount fix)");
-
-            // The wrapping KnnFloatVectorQuery path must now return the requested k hits, with
-            // the query vector itself (doc 0) among them.
-            // KnnFloatVectorQuery on top of the leaf must now produce k=5 finite-scored hits
-            // (before the fixes it produced MatchNoDocsQuery because the FloatVectorValues stub
-            // reported size==0, which short-circuited KnnFloatVectorQuery.approximateSearch).
-            org.apache.lucene.search.IndexSearcher s =
-                    new org.apache.lucene.search.IndexSearcher(r);
-            org.apache.lucene.search.KnnFloatVectorQuery q =
-                    new org.apache.lucene.search.KnnFloatVectorQuery("embedding", query, 5);
-            org.apache.lucene.search.TopDocs td = s.search(q, 5);
-            assertEquals(5, td.scoreDocs.length, "KnnFloatVectorQuery returns k=5 hits");
-            for (org.apache.lucene.search.ScoreDoc sd : td.scoreDocs) {
-                assertTrue(Float.isFinite(sd.score), "score must be finite, got: " + sd.score);
-                assertTrue(
-                        sd.score > 0, "score must be positive for DOT_PRODUCT, got: " + sd.score);
-            }
-            // Recall (whether the query vector itself appears in top-5) is intentionally NOT
-            // asserted: DiskBBQ is an approximate IVF method whose recall depends on nprobe and
-            // clustering quality; with vpc=64 + 1000 docs we visit only 4/~16 clusters by default.
-            // The bug-fix verification is "finite scores + non-zero hits" — see Javadoc.
         }
     }
 

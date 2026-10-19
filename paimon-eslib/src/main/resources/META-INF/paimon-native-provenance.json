@@ -1,0 +1,195 @@
+{
+  "originRepository": "https://github.com/CrownChu/es-paimon-lib",
+  "originCommit": "00b1f46bb49f8159a6dec768d43350f76fba88db",
+  "license": "Elastic License 2.0; retained in source headers and LICENSE-ELASTIC-2.0.txt",
+  "adaptations": [
+    "Relocated APIs and native bridge into the Paimon module; no external ESLib artifacts.",
+    "Use Paimon-provided shaded Jackson.",
+    "Paimon owns native runtime packaging and archive integration.",
+    "Preserve Paimon scalar-array null/empty semantics and native wildcard filters.",
+    "Follow Paimon formatting and Checkstyle requirements without changing license notices.",
+    "Release extracted runtime files at process exit; Paimon owns writer working directories."
+  ],
+  "files": [
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/ArchiveDataProvider.java",
+      "originSha256": "38a6dce1b12226fb8db71fa1fa7bc6f20ea2bbfc5f870ac3d1947c447149b7cf",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/ArchiveDataProvider.java",
+      "destinationSha256": "70176e5f573060a45f1fc6e17bfa68db58f9d3818075116de65d284b641c8385"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/ESIndexBuilder.java",
+      "originSha256": "4a9e17583188e0a9ac71e86e51a01a1c58492614e793b6255b50dbe025117323",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/ESIndexBuilder.java",
+      "destinationSha256": "5951e17a1ac5fbc75196ea5e83f2fafed26f87441e5bfdf967adf78a1498379f"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/ESIndexSearcher.java",
+      "originSha256": "f8fd2694527c06c8fbf20e3d51522caabf04922b262b774f4e27e19da7b005e0",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/ESIndexSearcher.java",
+      "destinationSha256": "72041d07eeb6b5b6359daf060d9ce8527a48aa631e14219168696488009ca355"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/BuiltinAnalyzer.java",
+      "originSha256": "bf7fba3e9583d00c42ffe0ebaba22bfaaf75d380477d58de9a9e814f1fc98c09",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/BuiltinAnalyzer.java",
+      "destinationSha256": "47dda45932c5a398717ff6324879d1945c7542bfb869e41b810050e93e67197a"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/FieldIndexConfig.java",
+      "originSha256": "e31134ab94c70f607ba68c29b483f69e7c4b0c59224460d9ea8a488f2308bd40",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/FieldIndexConfig.java",
+      "destinationSha256": "541593124b8cf096e07e223ce870964e7073887678e2133528c7ffe5bdee4871"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/FullTextParams.java",
+      "originSha256": "22fab7932c0aa83efcacd24513cf9fbd1c5410ef5d352410434425349fa929b1",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/FullTextParams.java",
+      "destinationSha256": "8f5ab3891f052abeebf2a4b0ba0b341a470eaf61647fb8d1784eedb62eb4342e"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/FullTextQuerySpec.java",
+      "originSha256": "9a33cdb11fb596120214ec5e65fedb21f58bcbcbc9765d3f483b43fee60d6e02",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/FullTextQuerySpec.java",
+      "destinationSha256": "9c277047a4b6d00419fac36317a644bc0fa3b44cfdc90d9886ad792b6f01ae84"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/IndexFilter.java",
+      "originSha256": "b897bbaa547859620b4d9a2ca03fdd73f2525c127d80fc9dc109291abb0713ca",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/IndexFilter.java",
+      "destinationSha256": "3e6ad6c4b7857e730ee009eb7eb5422e57fcdf3c267cd9915045b5f9da877f37"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/ScalarFieldType.java",
+      "originSha256": "68610fd1219c5ff7685175c5dd0f3476f6a2eed553a528de75bb010551d885a9",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/ScalarFieldType.java",
+      "destinationSha256": "ba0234ae247eb5da4b247a8addde58e6e26f4cba71309ff86286c8a99c0ee8b6"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/ScalarPredicate.java",
+      "originSha256": "a560c87ceb6acf07b67fe5a63628cd60b9009135dc2810eef6cfd0bc703b0f0c",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/ScalarPredicate.java",
+      "destinationSha256": "8fa38282478a6de4f06afd1a4cd1d211f03dad075d5bf8f3917b40794869d48a"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/SearchResult.java",
+      "originSha256": "bd2c62f5f3398dbc2fdbe44ba8daffa126352d5428ca246d244033b607d10e3c",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/SearchResult.java",
+      "destinationSha256": "19490c9b3a7cf6ca4aa4a5a093b5e9f49a4f7e3d070d03a628f97adf488f5fda"
+    },
+    {
+      "origin": "eslib-api/src/main/java/org/elasticsearch/eslib/api/model/VectorAlgorithm.java",
+      "originSha256": "9dc8bf053d8594fb173872005aa483382ba5936d294bac2a42e5952e5de20d50",
+      "destination": "src/main/java/org/apache/paimon/eslib/internal/model/VectorAlgorithm.java",
+      "destinationSha256": "bf42d3a8e6d19b026b9fd65f3b558d775610618f4cb503075f5ec3e171e1b4f6"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/ElasticppLibrary.java",
+      "originSha256": "4b62b1400863ab058e8c4c042d22b27d76ca2b72807e8abf5c1021ce5a6315ac",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/ElasticppLibrary.java",
+      "destinationSha256": "86498f94269e755ad5dd945cf63c7cc7155202851409d41a42360170a8f55bd5"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeArchiveMetadata.java",
+      "originSha256": "8972633a7536f12a4bb679dbcd1567d73c5be098fe396345a57b9c4d77f3f0f3",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeArchiveMetadata.java",
+      "destinationSha256": "7e61a367cf0796498d2a841ed8702b312395285717885308b71fbe0d16374ace"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeClient.java",
+      "originSha256": "4849b3cf628d6a84fe282e96818e644ad69676bf7f916cdbe8cd33d1c5a6c739",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeClient.java",
+      "destinationSha256": "1199f6ef40b3838b57a0343295bf7f22c4b5042e3f2fe2c0e0e68be411050133"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeESIndexBuilder.java",
+      "originSha256": "eb05c7f3ef03a2bd26391c1bbc7fab0d69f266c26083fa4b80b72e8695dc449b",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeESIndexBuilder.java",
+      "destinationSha256": "79a60dc9a80a266faba86e5d06f5f84b5590a70d56473837ce985b1ce62a0c20"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeESIndexSearcher.java",
+      "originSha256": "eabc7b03ceeadffc8d8d18285f700dfa9eec18ca9fab8ca9266a640d8ac93b8e",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeESIndexSearcher.java",
+      "destinationSha256": "2bc07d8cebc85164eb999189b1ad081b96297f40fd07872143c59be9de180df8"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeException.java",
+      "originSha256": "4015f5534af94fc1e3726da9f30436767dbe365e4e6d4aee6cf8a72e23dd2af0",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeException.java",
+      "destinationSha256": "a84ac52e7271f1f8f65a423572d55e916a3be93225ae540476ea2cdabefac022"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeIkDictionary.java",
+      "originSha256": "bbe45161a96089eea4939c174793df9228f202ef60c94ba42fd292f18c4a06ca",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeIkDictionary.java",
+      "destinationSha256": "e93029af8ef5a4d787b8033af8f1bfccc65f92ef7cb5f7692127e11adda52069"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeIndexManifest.java",
+      "originSha256": "b162b8492aad72b93563ad58d4ac6a0ee4fc70399f65540e8488e37bc10277a5",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeIndexManifest.java",
+      "destinationSha256": "3a572758045bfa1f94549312f42d986dc018ee8445fc3320245e3c305b0935dc"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeJson.java",
+      "originSha256": "197a5e4bb8a09a6c1db27882354b1d5ad0a489aec18975d1dc36d8615443e7f1",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeJson.java",
+      "destinationSha256": "77f7761eb28aa2bd25e4660544d8322e5d92e67fee6b2cc4ee1a1c3a3a19139f"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeMapping.java",
+      "originSha256": "5f2cfc2f54ece068ae5bf89c5f7b9bc80b2880ff6a898e42d152ff3bd1f20068",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeMapping.java",
+      "destinationSha256": "607b4645442b7fbd2445682957a0837da90919b78e97d0d5be748758b681bbd7"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeQueries.java",
+      "originSha256": "05d32c6edbfdb47db9ce6dc3ed43d69c5367390525b5bcf709447a3ef4e39640",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeQueries.java",
+      "destinationSha256": "40fda026b7224419cbb5d7363ed00e6e0465ca6aaadbeab98494bd32f5eeeae4"
+    },
+    {
+      "origin": "eslib-native/src/main/java/org/elasticsearch/eslib/nativeindex/NativeRuntime.java",
+      "originSha256": "293a69755f4e92c86e135534cb70827c4529bbce12ea4ca64a6abcc7c1398b8d",
+      "destination": "src/main/java/org/apache/paimon/eslib/nativeindex/NativeRuntime.java",
+      "destinationSha256": "befca9b9e9abd4c92d55efcc37ba34b936a5ad6342d938f3a9074a0d7bc83550"
+    },
+    {
+      "origin": "eslib-native/src/test/java/org/elasticsearch/eslib/nativeindex/NativeArchiveMetadataTest.java",
+      "originSha256": "88c7b164645ad554c1181186342c2df98914f6c284b510ceace723526d8aac78",
+      "destination": "src/test/java/org/apache/paimon/eslib/nativeindex/NativeArchiveMetadataTest.java",
+      "destinationSha256": "5281b2ec9b3da52575c82261f72f33b4b91a7064d6bf8818fb50162acdc24689"
+    },
+    {
+      "origin": "eslib-native/src/test/java/org/elasticsearch/eslib/nativeindex/NativeIkDictionaryTest.java",
+      "originSha256": "f635fd0b265013f318f0388c6d602bc6ec916e5cdbeeda8062be44a090a52814",
+      "destination": "src/test/java/org/apache/paimon/eslib/nativeindex/NativeIkDictionaryTest.java",
+      "destinationSha256": "c3056c9c9a63e10faa606bde0e0011b6237833ad8eacfa584f4d501df5c3cb60"
+    },
+    {
+      "origin": "eslib-native/src/test/java/org/elasticsearch/eslib/nativeindex/NativeLifecycleTest.java",
+      "originSha256": "5106945382393d9394c04306ff0a10e42353abeb61a286eb1510b49356329c32",
+      "destination": "src/test/java/org/apache/paimon/eslib/nativeindex/NativeLifecycleTest.java",
+      "destinationSha256": "10998b638d7a4b223f0669d3203a3e9908ef0954a388f4c90f207c8ed32a3109"
+    },
+    {
+      "origin": "eslib-native/src/test/java/org/elasticsearch/eslib/nativeindex/NativeOwnershipTest.java",
+      "originSha256": "104b3dcfbc5410bcd2f54c58cb0a0670b49945780ce4c46cd84cc98c18f893eb",
+      "destination": "src/test/java/org/apache/paimon/eslib/nativeindex/NativeOwnershipTest.java",
+      "destinationSha256": "d8afdf7bfeac0498149add210e830b88f8cbdc821355f1dd09237a31faa34887"
+    },
+    {
+      "origin": "eslib-native/src/test/java/org/elasticsearch/eslib/nativeindex/NativeProtocolTest.java",
+      "originSha256": "30992a988be1a7bc93a3ed1071ccaecac2703e6d48d624c90429d8aeef9c175e",
+      "destination": "src/test/java/org/apache/paimon/eslib/nativeindex/NativeProtocolTest.java",
+      "destinationSha256": "aab3e85d8eb03c30ec29374ccb64b47be059fbce300632d7ddea9b9036c09872"
+    }
+  ],
+  "testFixtureSource": {
+    "repository": "https://github.com/CrownChu/paimon-cpp",
+    "commit": "e11483e0dc851eb51c26054fcfd0eb0613291bca",
+    "path": "test/inte/eslib/GenerateESLibTable.java",
+    "adaptations": "Use current GitHub Paimon writer and snapshot APIs and Paimon shaded Jackson."
+  }
+}

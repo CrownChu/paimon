@@ -21,6 +21,8 @@ package org.apache.paimon.eslib.index;
 import org.apache.paimon.data.InternalArray;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.data.Timestamp;
+import org.apache.paimon.eslib.internal.ESIndexBuilder;
+import org.apache.paimon.eslib.internal.model.FieldIndexConfig;
 import org.apache.paimon.fs.PositionOutputStream;
 import org.apache.paimon.globalindex.GlobalIndexMultiColumnWriter;
 import org.apache.paimon.globalindex.GlobalIndexSingleColumnWriter;
@@ -34,9 +36,6 @@ import org.apache.paimon.types.TimestampType;
 import org.apache.paimon.types.VectorType;
 import org.apache.paimon.utils.FileIOUtils;
 
-import org.elasticsearch.eslib.api.ESIndexBuilder;
-import org.elasticsearch.eslib.api.model.FieldIndexConfig;
-
 import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -49,8 +48,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Multi-column writer that builds ESLib (Lucene-based) indexes. Accepts InternalRow with all
- * indexed fields and produces a single archive file.
+ * Multi-column writer that invokes native C++ and streams its sealed files into a Paimon archive.
  */
 public class ESIndexGlobalIndexWriter
         implements GlobalIndexSingleColumnWriter, GlobalIndexMultiColumnWriter, Closeable {
@@ -61,6 +59,7 @@ public class ESIndexGlobalIndexWriter
     private final List<DataField> fields;
     private final ESIndexOptions indexOptions;
     private final ESIndexBuilder builder;
+    private final Path outputDirectory;
     private long docCount;
     private Throwable writeFailure;
     private boolean finished;
@@ -84,7 +83,18 @@ public class ESIndexGlobalIndexWriter
             fieldsCopy.add(nonNullField);
         }
         this.fields = Collections.unmodifiableList(fieldsCopy);
-        this.builder = ESIndexBuilderFactory.create(indexOptions.getFieldConfigs());
+        this.outputDirectory = Files.createTempDirectory("paimon-native-index-");
+        try {
+            this.builder =
+                    ESIndexBuilderFactory.create(indexOptions.getFieldConfigs(), outputDirectory);
+        } catch (IOException | RuntimeException | Error failure) {
+            try {
+                FileIOUtils.deleteDirectory(outputDirectory.toFile());
+            } catch (Throwable cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
+        }
         this.docCount = 0;
         this.finished = false;
         this.closed = false;
@@ -207,7 +217,7 @@ public class ESIndexGlobalIndexWriter
                         field.name(),
                         docId,
                         singleKeyword,
-                        org.elasticsearch.eslib.api.model.ScalarFieldType.KEYWORD);
+                        org.apache.paimon.eslib.internal.model.ScalarFieldType.KEYWORD);
                 writeFullTextSubField(field.name(), docId, singleKeyword);
                 break;
             case SCALAR:
@@ -249,7 +259,7 @@ public class ESIndexGlobalIndexWriter
                         field.name(),
                         docId,
                         keyword,
-                        org.elasticsearch.eslib.api.model.ScalarFieldType.KEYWORD);
+                        org.apache.paimon.eslib.internal.model.ScalarFieldType.KEYWORD);
                 writeFullTextSubField(field.name(), docId, keyword);
                 break;
             case SCALAR:
@@ -276,7 +286,10 @@ public class ESIndexGlobalIndexWriter
         String presenceField = indexOptions.arrayPresenceField(field.name());
         if (presenceField != null) {
             builder.addScalarField(
-                    presenceField, docId, 1, org.elasticsearch.eslib.api.model.ScalarFieldType.INT);
+                    presenceField,
+                    docId,
+                    1,
+                    org.apache.paimon.eslib.internal.model.ScalarFieldType.INT);
         }
     }
 
@@ -307,7 +320,7 @@ public class ESIndexGlobalIndexWriter
                     subField,
                     docId,
                     value,
-                    org.elasticsearch.eslib.api.model.ScalarFieldType.KEYWORD);
+                    org.apache.paimon.eslib.internal.model.ScalarFieldType.KEYWORD);
         }
     }
 
@@ -457,7 +470,14 @@ public class ESIndexGlobalIndexWriter
 
             // Snapshot the file list ONCE so the archive layout and the offset table in meta agree
             // exactly (listFiles() order must not differ between packing and meta building).
-            java.io.File[] segFiles = outputDir.toFile().listFiles();
+            java.io.File[] segFiles =
+                    outputDir
+                            .toFile()
+                            .listFiles(
+                                    file ->
+                                            file.isFile()
+                                                    && !file.getName().equals("write.lock")
+                                                    && !file.getName().endsWith(".tmp"));
             if (segFiles == null) {
                 segFiles = new java.io.File[0];
             }
@@ -508,7 +528,9 @@ public class ESIndexGlobalIndexWriter
             failure = e;
         }
         try {
-            FileIOUtils.deleteDirectory(builder.getOutputDir().toFile());
+            if (failure == null) {
+                FileIOUtils.deleteDirectory(outputDirectory.toFile());
+            }
         } catch (Throwable e) {
             if (failure == null) {
                 failure = e;

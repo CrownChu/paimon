@@ -18,6 +18,8 @@
 
 package org.apache.paimon.eslib.index;
 
+import org.apache.paimon.eslib.internal.model.FieldIndexConfig;
+import org.apache.paimon.eslib.internal.model.VectorAlgorithm;
 import org.apache.paimon.fs.PositionOutputStream;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.globalindex.GlobalIndexIOMeta;
@@ -32,8 +34,6 @@ import org.apache.paimon.predicate.VectorSearch;
 import org.apache.paimon.types.DataField;
 import org.apache.paimon.types.DataTypes;
 
-import org.elasticsearch.eslib.api.model.FieldIndexConfig;
-import org.elasticsearch.eslib.api.model.VectorAlgorithm;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -204,7 +204,7 @@ class ESIndexVectorMetricTest {
     }
 
     @Test
-    void legacyMetadataStillRequiresCurrentOptions() throws Exception {
+    void legacyMetadataCannotBeReinterpretedAsNative() throws Exception {
         // Offset-only metadata predates persisted field configs: [fileCount][name][offset][len].
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(bytes);
@@ -229,7 +229,9 @@ class ESIndexVectorMetricTest {
                                         null,
                                         null))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Legacy es-index metadata");
+                .hasRootCauseMessage(
+                        "Legacy Java es-index archives require the original reader or a rebuild; "
+                                + "this module directly reads native ESM1 v3 archives.");
     }
 
     private static ESIndexGlobalIndexer indexer(String metric) {

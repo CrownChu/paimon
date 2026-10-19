@@ -1,0 +1,99 @@
+<!--
+
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+
+
+
+-->
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Paimon ES native 直接调用实施说明</title><style>body{margin:0;background:#f4f6f8;color:#23313e;font:16px/1.8 system-ui,-apple-system,"Noto Sans CJK SC",sans-serif}main{max-width:1080px;margin:32px auto;padding:34px 48px;background:white;border-radius:12px}h1{font-size:30px;line-height:1.4}h2{font-size:23px;margin-top:38px;border-top:1px solid #dce3e9;padding-top:23px}h3{font-size:19px;margin-top:25px}code{font-family:ui-monospace,monospace;font-size:.9em;background:#eef2f5;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}pre{overflow:auto;background:#172c3a;color:#e8f1f6;padding:18px;border-radius:8px;line-height:1.55}pre code{background:none;padding:0;overflow-wrap:normal}nav{display:flex;gap:10px 22px;flex-wrap:wrap;padding:18px;background:#eef4f7}a{color:#17639a}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #d7e1e9;text-align:left;vertical-align:top;padding:10px}th{background:#eef4f7}.table{overflow:auto}figure{margin:24px 0}svg{width:100%;height:auto;background:white}figcaption{font-size:14px;color:#536572}footer{margin-top:34px;color:#536572;font-size:14px}@media(max-width:700px){main{margin:0;padding:20px}h1{font-size:25px}table{min-width:640px}}</style></head><body><main><nav><a href="#section-1">1. 背景与问题</a><a href="#section-2">2. 现有实现与关键代码</a><a href="#section-3">3. 总体方案</a><a href="#section-4">4. 设计原则与取舍</a><a href="#section-5">5. 详细设计</a><a href="#section-6">6. 兼容、迁移与回滚</a><a href="#section-7">7. 可观测性与验证计划</a><a href="#section-8">8. 实施计划与发布条件</a><a href="#section-9">9. 风险与未决问题</a></nav><h1 id="document-title">Paimon ES 模块直接调用 native 的实施说明</h1>
+<p>方案类型：code-backed；决策状态：FROZEN；文档状态：代码、模块及 SDK 互通已验收；适用范围：CrownChu/paimon 的 es-index 全局索引；版本身份：CrownChu/paimon@b34c28a3f633f5d2ef2a2aaad6c5a3130340014d，协议：ESM1 v3 / elasticpp C ABI v1。</p>
+<h2 id="section-1">1. 背景与问题</h2>
+<p>本次问题是外部库发布顺序限制了 Paimon 自身交付。范围仅为 ES 全局索引模块；约束是保留 es-index 调用入口和已验收的 native 归档语义。</p>
+<p>目前 GitHub Paimon 的 ES 模块通过独立 ESLib 的 Java API、Builder 和 Searcher 构建与查询索引。即使 native 实现已经完成，Paimon 仍需要等待 ESLib API、binding 和 runtime 包先发布。此次将 Paimon 所需的桥接、字段模型、查询转换和封存读取直接编译进 Paimon 模块，使构建和查询由模块直接调用 libelasticpp.so。</p>
+<p>保留现有模块坐标 paimon-eslib 与索引标识 es-index，以维持调用入口；移除外部 io.github.paimon.eslib 依赖和生产 Java Lucene 依赖。既有分组索引查询修复保留。旧 Java 索引需要原版本读取或重建，不由 native 适配器猜测格式。</p>
+<h2 id="section-2">2. 现有实现与关键代码</h2>
+<p>[VERIFIED] commit b34c28a3f633f5d2ef2a2aaad6c5a3130340014d。当前流程是 Paimon GlobalIndexer → ESIndexBuilderFactory → ESLib DefaultESIndexBuilder / DefaultESIndexSearcher → Java Lucene。Paimon writer 负责将真实行转换成各字段输入，并将生成目录中的文件封装为全局索引文件。</p>
+<p><code>CrownChu/paimon@b34c28a3</code>，<code>paimon-eslib/src/main/java/org/apache/paimon/eslib/index/ESIndexBuilderFactory.java:31</code>，类：ESIndexBuilderFactory，方法：create/createSearcher：</p>
+<pre><code data-language="java">public static ESIndexBuilder create(Map&lt;String, FieldIndexConfig&gt; fieldConfigs)
+        throws IOException {
+    return new DefaultESIndexBuilder(fieldConfigs);
+}
+
+public static ESIndexSearcher createSearcher() {
+    return new DefaultESIndexSearcher();
+}</code></pre>
+<p>这段工厂的作用是选择具体构建与查询对象；当前行为是直接返回外部 ESLib 对象，当前问题是编译和装载都依赖外部库。改造切入点是工厂的返回对象和模型类型。新实现将返回同模块编译的 native builder / searcher；字段配置也改用模块内部类型，消除编译和运行时对外部 API JAR 的引用。构建顺序、NULL 占位和分片相对行号继续由 Paimon writer 提供。</p>
+<p><code>CrownChu/paimon@b34c28a3</code>，<code>paimon-eslib/src/main/java/org/apache/paimon/eslib/index/ESIndexFileMeta.java:43</code>，ESIndexFileMeta：</p>
+<pre><code data-language="java">private static final int MAGIC = 0x45534D31; // &quot;ESM1&quot;
+private static final int VERSION = 2;
+private static final int CONFIG_ONLY_VERSION = 1;</code></pre>
+<p>现有元数据存储字段配置和归档偏移，但未声明 native 后端。新写入使用已经与 C++ SDK 互通的 ESM1 v3，明确记录 elasticpp；目录中的 native descriptor 继续采用既有格式，记录 mapping、别名、文件摘要、行空间和 native 身份。历史格式名保留，不代表需要 ESLib JAR。</p>
+<h2 id="section-3">3. 总体方案</h2><figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 240" role="img" aria-labelledby="flow-title"><title id="flow-title">拟议流程：Paimon ES 模块直接调用 native，封存归档供 Java 与 C++ SDK 读取</title><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#35536b"/></marker></defs><g fill="#f2f7fa" stroke="#35536b"><rect x="12" y="20" width="210" height="76" rx="8"/><rect x="264" y="20" width="210" height="76" rx="8"/><rect x="516" y="20" width="210" height="76" rx="8"/><rect x="768" y="20" width="220" height="76" rx="8"/><rect x="264" y="153" width="210" height="65" rx="8" fill="#fff2ed"/><rect x="768" y="153" width="220" height="65" rx="8"/></g><g font-family="sans-serif" text-anchor="middle" fill="#183246" font-size="16"><text x="117" y="49">Paimon 表 / 快照</text><text x="117" y="76" font-size="13">Source of truth：行与索引清单</text><text x="369" y="49">Paimon ES 模块</text><text x="369" y="76" font-size="13">拥有 JNA 句柄和临时目录</text><text x="621" y="49">libelasticpp.so</text><text x="621" y="76" font-size="13">构建、封存、只读查询</text><text x="878" y="49">ESM1 v3 native 归档</text><text x="878" y="76" font-size="13">descriptor + sealed files</text><text x="369" y="180">错误：终止 attempt</text><text x="369" y="204" font-size="13">清理本次资源，不发布快照</text><text x="878" y="180">Java reader / C++ SDK</text><text x="878" y="204" font-size="13">验证身份后读取同一归档</text></g><g fill="none" stroke="#35536b" stroke-width="2" marker-end="url(#arrow)"><path d="M222 58 H257"/><path d="M474 58 H509"/><path d="M726 58 H761"/><path d="M878 96 V146"/><path d="M369 96 V146" stroke-dasharray="5 4"/></g></svg><figcaption>Proposed：调用在同一进程内完成，索引发布仍由 Paimon table commit 决定；native 校验失败返回错误并结束本次构建。</figcaption></figure>
+<p>[DECISION] 调整并改变依赖路径，Paimon ES 模块成为 native 适配对象的 owner；Paimon 表、快照和 index manifest 是 source of truth。表数据格式与原提交路径保持不变。Paimon ES 模块拥有其 native 调用对象与资源生命周期，直接同步调用 C ABI v1。C++ 引擎仍由 elasticpp 构建，不复制引擎源码。Paimon 为 SO 与必要动态库提供自己的平台 classifier；普通模块 JAR 包含桥接代码，平台 JAR 包含 manifest 和二进制。构建 profile 可以使用本地已验证的 bundle，默认构建不自动下载 SO。</p>
+<pre><code data-language="text">Paimon 表与快照（数据真值）
+       │ GlobalIndexWriter / GlobalIndexReader
+       ▼
+Paimon ES 模块：字段转换、JNA、归档验证、资源所有权
+       │ 同进程 C ABI v1
+       ▼
+libelasticpp.so：构建、提交、封存、只读查询
+       │
+       ▼
+ESM1 v3 + native descriptor + sealed files
+       ├── Paimon Java reader
+       └── 已有 C++ SDK reader</code></pre>
+<p>失败时的 fallback 是返回明确错误并清理资源。任何资源不足、摘要不符、ABI 错配或封存失败都返回显式错误；不会把 native 故障解释成空结果，也不会隐式切回 Java。Paimon 表提交是索引可见性的边界，临时构建目录不是已提交索引。</p>
+<h2 id="section-4">4. 设计原则与取舍</h2>
+<p>保留已经验收的归档语义，优先降低 SDK 互通风险。取舍是模块源码量增加、需要独立维护 ABI 与格式测试；若 native ABI 或目标平台变化，重新评估运行包与兼容矩阵。迁入的公开桥接源码保留其 Elastic License 2.0 和归属说明，Paimon 现有 Apache 代码保持其许可证；来源与改动记录随模块交付，不把复制后的源码改标为 Apache 原创。</p>
+<p>生产依赖仅保留 Paimon 提供的基础类型、其 shaded JSON 和 JNA 等必要依赖。Java Lucene 只可作为独立测试 oracle，不进入生产依赖闭包。INT/BIGINT 标量数组保留多值、NULL 与空数组语义；GEO、未实现的算法参数或全文 DSL 在配置/查询入口明确拒绝；HNSW、INT8 HNSW、DiskBBQ 和 IK 走同一 native 调用链。</p>
+<h2 id="section-5">5. 详细设计</h2>
+<h3 id="section-5-detail-1">受影响关键流程总览</h3>
+<div class="table"><table><thead><tr><th>流程入口</th><th>改动前</th><th>改动后与失败出口</th></tr></thead><tbody><tr><td>ESIndexGlobalIndexWriter</td><td>调用外部 Java builder</td><td>模块内 native builder；失败后终止并清理，不提交索引</td></tr><tr><td>ESIndexGlobalIndexReader</td><td>外部 Searcher 打开 Lucene 文件</td><td>验证 ESM1 v3 和目录 descriptor，再打开 native reader；错配报错</td></tr><tr><td>Maven package</td><td>先取得外部 ESLib 制品</td><td>模块源码直接编译；可选生成本模块 native classifier</td></tr><tr><td>close / failure</td><td>外部实现管理资源</td><td>builder / reader 单独拥有 native 句柄和临时目录，返回内存复制后释放</td></tr></tbody></table></div>
+<p>代码落点为 ESIndexGlobalIndexWriter、ESIndexGlobalIndexReader、ESIndexFileMeta 与模块内 nativeindex 包。输入由 Paimon writer 的字段配置、行值和 shard-relative row ID 组成；输出为可提交的 ResultEntry 与 sealed files；调用方包括 Paimon Java reader 和 C++ SDK，下游消费相同归档。所有权由 builder / reader 持有，其生命周期从构造、build/load 到 close；同一构建 attempt 是独立代次。</p>
+<h3 id="section-6-detail-2">写入、提交与封存</h3>
+<p>Paimon 的相对行号必须单调、稠密地对应归档内 doc position；跳过位置和 NULL 以占位文档保留。writer 先转换字段和物理别名，再按最多 128 行、约 4 MiB 的批次提交。C++ commit、seal 和目录 probe 成功后，Paimon 才写入完整 sealed files、descriptor 与 ESM1 v3 元数据；write.lock 和 .tmp 不进入归档。</p>
+<p>构建有副作用。幂等标识只传播到同一次 native shard 的 operationId，不建立与表快照分离的幂等记录；业务副作用的原子可见性边界仍是 Paimon table commit。timeout 后 mutation 状态不确定属于 unknown outcome；unknown outcome 的恢复动作是终止未提交的 attempt，在资源关闭后用新目录、新 operation 身份重建，原 attempt 不可继续写入。</p>
+<p>批次 sequence 与同一次构建的 native identity 对应，不在超时或 mutation 状态不确定时自动重放。失败的 attempt 不提交，交由 Paimon 原有 attempt / table commit 机制重建，新的 attempt 使用独立目录和 native shard 身份。</p>
+<h3 id="section-6-detail-3">读取与查询</h3>
+<p>reader 从快照发现元数据，以元数据中的后端、字段配置和行范围为准。归档文件按偏移读取，逐文件验证长度与 SHA-256 后物化到私有目录；mapping、配置身份、SO commit/SHA 和 native probe 全部一致才打开句柄。只读查询不修改表或索引，不创建 mutation 去重记录；同一 reader 串行执行，返回命中位置与分数。</p>
+<p>低层 native 返回 shard-local row ID，由 Paimon / C++ SDK 既有外层逻辑加全局偏移。NULL、超过 2^53 的 long、时间字段、向量分数、全文过滤和分组索引调用路径重新验收。向量和全文显式索引查询仍只覆盖已建索引的范围。</p>
+<h3 id="section-6-detail-4">数据模型与持久化设计</h3>
+<p>为什么需要 ESM1 元数据和 native descriptor：前者保存字段 schema、文件 offset/length 与后端，解决 Paimon 查找归档入口的问题；后者保存配置、mapping、行空间和文件摘要，解决 native 打开前的身份验证问题。设计理念是让快照的 index manifest 作为 source of truth，临时目录不具备提交权威；文件摘要是内容 key，版本 version 决定解析方式，consumer 不根据新表选项猜测旧格式。归档不可变，consistency 绑定到同一提交快照，不修改原始表数据。</p>
+<h3 id="section-6-detail-5">接口、容量与生命周期</h3>
+<p>side_effects: side_effecting。输入 Request 是字段与原始行值；输出 Response 是封存文件或带分数的 row IDs；Error/Retry 遵循只读和写入的不同合同，Version compatibility 由 ESM1 v3 与 ABI v1 校验。</p>
+<div class="table"><table><thead><tr><th>Interface / Operation</th><th>Side effects</th><th>合同</th><th>Reason</th></tr></thead><tbody><tr><td>ESIndexBuilder.add* / finishDocument / build</td><td>side_effecting</td><td>同一次构建有序提交；发生不确定 mutation 后终止，不盲目重试</td><td>修改未提交的构建目录</td></tr><tr><td>ESIndexSearcher.load / search</td><td>read_only</td><td>读取同一封存身份；超时/取消报错；每次结果至多 100 万，向量 topK 至多 1 万</td><td>读取不可变索引</td></tr><tr><td>native classifier 装载</td><td>not_applicable</td><td>LP64、CPU、glibc、导出符号、文件摘要与 capabilities 必须匹配</td><td>仅装载本地运行库，没有业务数据变更</td></tr><tr><td>Paimon table commit</td><td>side_effecting</td><td>沿用 Paimon 提交协议，不由 native bridge 发布快照或更新 catalog</td><td>保持原 Paimon 提交边界</td></tr></tbody></table></div>
+<p>builder / reader 拥有各自句柄，构造失败也执行关闭和临时目录回收。运行库保持进程级装载身份，不能因另一份归档更换 SO；每个归档物化需要与索引规模相当的本地磁盘，并发 reader 的空间相加。批次、JSON 长度、文件数和返回条数有既有边界，超限显式拒绝。</p>
+<h2 id="section-6">6. 兼容、迁移与回滚</h2>
+<p>兼容矩阵以文件实际版本为准：新 writer 输出与已有 C++ SDK 相同的 native 格式，验收目标为双向读取：旧 native writer → 新 Java reader、新 writer → 原 C++ SDK。旧 ESM1 v1/v2 或 legacy Java 索引明确拒绝；需要继续使用原实现读取或重建为新 native 索引。普通表数据格式不变，无表数据 backfill，不做隐式原地转换。</p>
+<p>部署时先在独立分支构建候选模块和匹配平台包，再对真实表重建新索引并验收。回滚保留原模块与原 Java 索引的快照/文件，恢复原模块后选择原快照；不能让旧 Java reader 读取新 native 索引。发布 rollout 后的残留状态包括未提交 attempt 和临时目录；由 owner 在失败关闭或测试结束时清理。测试生成的数据与临时目录由本任务管理，已经提交的原表和索引不删除。</p>
+<h2 id="section-7">7. 可观测性与验证计划</h2>
+<p>组件正确性通过单元测试覆盖 ABI 尺寸、批量初始化、查询转换、字典身份、返回对象释放和异常清理；依赖树和成品 JAR 必须没有外部 ESLib 类或生产 Java Lucene。故障验证覆盖缺失平台包、错误摘要/commit、损坏归档、旧 Java 格式及关闭后调用；错误包含阶段，不输出敏感 payload。</p>
+<p>集成与生命周期测试验证 close、异常释放和真实 native 查询。可观测性记录失败阶段和路径激活，指标包括实际归档打开、native 能力身份和正确性差分计数。目标路径执行以 native 封存文件与查询结果为证。</p>
+<p>端到端测试使用真实 Java catalog/write/commit 构建 Parquet/ORC × 三种向量算法的表，独立 Java 全表读取生成 oracle，再由原 C++ SDK 查询和回表比较。另覆盖 Java native reader 的分组标量、NULL、long 精度、日期/时间、全文和向量结果。native 路径激活以实际 C ABI 写入、封存文件和运行身份为证，配置成功不等于激活。性能压测不属于本轮验收，不声称性能收益。</p>
+<h2 id="section-8">8. 实施计划与发布条件</h2><h3 id="native-build-usage">本分支的构建与运行方式</h3>
+<p>本分支基于 GitHub 最近的分组索引修复提交 b34c28a3。Java 生产包直接包含模块内桥接与模型，使用 Paimon shaded Jackson 和 JNA 5.14.0；未使用外部 ESLib JAR。默认测试无须 SO，真实 C++ 测试和本模块的平台包由本地已验收 bundle 启用：</p>
+<pre><code>mvn -Ppaimon-eslib -pl paimon-eslib -am package
+mvn -Ppaimon-eslib -pl paimon-eslib -am \
+  -Dpaimon.es.native.bundle=/absolute/path/to/qualified-bundle package</code></pre>
+<p>运行时使用本模块普通 JAR、JNA、Paimon 自身运行依赖及 linux-x86_64-native classifier。平台包需匹配 manifest 中的 SO 和所有动态库。native profile 的测试类和普通测试输出目录分离，避免 SO 资源或 native 用例残留进无 SO 的单测。当前候选平台为 Linux x86_64-v3、glibc 2.32+、C ABI v1；未自动下载或公开发布二进制。具体配置与约束见同目录 README。</p>
+
+<div class="table"><table><thead><tr><th>Milestone</th><th>Change</th><th>Dependency</th><th>Owner role</th><th>Exit criteria</th><th>Rollback</th></tr></thead><tbody><tr><td>M1</td><td>迁入桥接和类型，去除外部依赖</td><td>冻结 GitHub 基线与公开来源</td><td>developer</td><td>模块生产编译与依赖检查通过</td><td>恢复模块源码与 POM</td></tr><tr><td>M2</td><td>接通 native 工厂与 ESM1 v3</td><td>M1、已验证 SO</td><td>developer</td><td>真实写读、故障和旧格式拒绝通过</td><td>不启用候选模块</td></tr><tr><td>M3</td><td>Java/C++ SDK 互通和文档</td><td>M2</td><td>developer/tester</td><td>原 SDK 对新表查询与完整回表通过，checks 通过</td><td>保留旧快照和旧 reader</td></tr></tbody></table></div>
+<p>方向已确定；测试结果以本轮实际证据为准。代码与文档可独立评审，未授权合并、部署或公开二进制发布。现有 SO 的 Dadi 公开再分发材料仍待补齐；本轮本地候选测试复用已有 bundle，不据此声称公共 runtime 已发布。该条件不阻塞源码修改与本地真实验收。</p>
+<h2 id="section-9">9. 风险与未决问题</h2>
+<p>风险登记：若 C ABI 结构或 native 身份错配，触发装载或打开错误，由 layout、capability 和 digest 检查拒绝；不得回退为空命中。若本地磁盘不足，归档物化失败，关闭句柄并清理本次目录，保留原索引不变。若旧 Java 格式进入新 reader，触发格式拒绝，由原模块/原快照读取或重建，不能原地覆盖。若目标机器 CPU/glibc 不满足合同，在打开 SO 前拒绝。迁入代码的原许可证必须保留，构建检查不能替换这些版权头。</p>
+<p>Open questions: none。公开二进制发布仍受已知 Dadi 材料门禁约束，属于后续发布条件；源码迁移和本地候选验收不声称该条件已关闭。</p><footer>本文为代码实施说明。测试与交付状态以本轮实际验收记录为准。</footer></main></body></html>

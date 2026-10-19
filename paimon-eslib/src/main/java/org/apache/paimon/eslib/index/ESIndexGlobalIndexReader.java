@@ -19,6 +19,15 @@
 package org.apache.paimon.eslib.index;
 
 import org.apache.paimon.data.Timestamp;
+import org.apache.paimon.eslib.internal.ArchiveDataProvider;
+import org.apache.paimon.eslib.internal.ESIndexSearcher;
+import org.apache.paimon.eslib.internal.model.FieldIndexConfig;
+import org.apache.paimon.eslib.internal.model.FullTextParams;
+import org.apache.paimon.eslib.internal.model.FullTextQuerySpec;
+import org.apache.paimon.eslib.internal.model.IndexFilter;
+import org.apache.paimon.eslib.internal.model.ScalarFieldType;
+import org.apache.paimon.eslib.internal.model.ScalarPredicate;
+import org.apache.paimon.eslib.internal.model.SearchResult;
 import org.apache.paimon.fs.SeekableInputStream;
 import org.apache.paimon.globalindex.GlobalIndexIOMeta;
 import org.apache.paimon.globalindex.GlobalIndexReader;
@@ -40,15 +49,6 @@ import org.apache.paimon.utils.RoaringNavigableMap64;
 
 import org.apache.paimon.shade.jackson2.com.fasterxml.jackson.databind.JsonNode;
 
-import org.elasticsearch.eslib.api.ArchiveDataProvider;
-import org.elasticsearch.eslib.api.ESIndexSearcher;
-import org.elasticsearch.eslib.api.model.FieldIndexConfig;
-import org.elasticsearch.eslib.api.model.FullTextParams;
-import org.elasticsearch.eslib.api.model.FullTextQuerySpec;
-import org.elasticsearch.eslib.api.model.IndexFilter;
-import org.elasticsearch.eslib.api.model.ScalarFieldType;
-import org.elasticsearch.eslib.api.model.ScalarPredicate;
-import org.elasticsearch.eslib.api.model.SearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -153,6 +153,11 @@ public class ESIndexGlobalIndexReader implements GlobalIndexReader {
             ESIndexFileMeta.Parsed parsed = ESIndexFileMeta.read(archiveMeta.metadata());
             this.fileOffsets = parsed.fileOffsets();
             validateArchiveOffsets(archiveMeta, fileOffsets);
+            if (!ESIndexBuilderFactory.ELASTICPP.equals(parsed.backend())) {
+                throw new IOException(
+                        "Legacy Java es-index archives require the original reader or a rebuild; "
+                                + "this module directly reads native ESM1 v3 archives.");
+            }
             this.hasPersistedFieldConfigs = parsed.hasFieldConfigs();
             if (parsed.hasFieldConfigs()) {
                 this.indexOptions = ESIndexOptions.fromFieldConfigs(parsed.fieldConfigs());
@@ -1859,10 +1864,10 @@ public class ESIndexGlobalIndexReader implements GlobalIndexReader {
     }
 
     /**
-     * Escape the Lucene {@link org.apache.lucene.search.WildcardQuery} metacharacters ({@code *},
-     * {@code ?} and the escape char {@code \}) in a literal so it is matched verbatim. StartsWith /
-     * EndsWith / Contains literals carry no wildcards, so any such character in them is data and
-     * must not be reinterpreted as a wildcard.
+     * Escape the Lucene wildcard query metacharacters ({@code *}, {@code ?} and the escape char
+     * {@code \}) in a literal so it is matched verbatim. StartsWith / EndsWith / Contains literals
+     * carry no wildcards, so any such character in them is data and must not be reinterpreted as a
+     * wildcard.
      */
     private static String escapeWildcardLiteral(String s) {
         StringBuilder sb = new StringBuilder(s.length() + 4);

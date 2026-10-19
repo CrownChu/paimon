@@ -18,24 +18,44 @@
 
 package org.apache.paimon.eslib.index;
 
-import org.elasticsearch.eslib.api.ESIndexBuilder;
-import org.elasticsearch.eslib.api.ESIndexSearcher;
-import org.elasticsearch.eslib.api.model.FieldIndexConfig;
-import org.elasticsearch.eslib.builder.DefaultESIndexBuilder;
-import org.elasticsearch.eslib.searcher.DefaultESIndexSearcher;
+import org.apache.paimon.eslib.internal.ESIndexBuilder;
+import org.apache.paimon.eslib.internal.ESIndexSearcher;
+import org.apache.paimon.eslib.internal.model.FieldIndexConfig;
+import org.apache.paimon.eslib.nativeindex.NativeESIndexBuilder;
+import org.apache.paimon.eslib.nativeindex.NativeESIndexSearcher;
 
 import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
 
-/** Factory to create ESIndexBuilder/ESIndexSearcher from eslib-core. */
+/** Creates the native implementation compiled into this Paimon module. */
 public class ESIndexBuilderFactory {
+
+    static final String JAVA = "java";
+    static final String ELASTICPP = "elasticpp";
+
+    static String backend(String value) {
+        String backend = value.toLowerCase(Locale.ROOT);
+        if (!ELASTICPP.equals(backend)) {
+            throw new IllegalArgumentException(
+                    "Paimon es-index directly uses elasticpp; Java ESLib is not packaged. "
+                            + "Read legacy Java indexes with the original module or rebuild them.");
+        }
+        return backend;
+    }
 
     public static ESIndexBuilder create(Map<String, FieldIndexConfig> fieldConfigs)
             throws IOException {
-        return new DefaultESIndexBuilder(fieldConfigs);
+        return new NativeESIndexBuilder(fieldConfigs);
+    }
+
+    static ESIndexBuilder create(Map<String, FieldIndexConfig> fieldConfigs, Path outputDirectory)
+            throws IOException {
+        return new NativeESIndexBuilder(fieldConfigs, outputDirectory);
     }
 
     public static ESIndexSearcher createSearcher() {
-        return new DefaultESIndexSearcher();
+        return new NativeESIndexSearcher();
     }
 }

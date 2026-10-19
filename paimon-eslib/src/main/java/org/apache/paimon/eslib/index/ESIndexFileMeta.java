@@ -18,10 +18,10 @@
 
 package org.apache.paimon.eslib.index;
 
-import org.elasticsearch.eslib.api.model.BuiltinAnalyzer;
-import org.elasticsearch.eslib.api.model.FieldIndexConfig;
-import org.elasticsearch.eslib.api.model.ScalarFieldType;
-import org.elasticsearch.eslib.api.model.VectorAlgorithm;
+import org.apache.paimon.eslib.internal.model.BuiltinAnalyzer;
+import org.apache.paimon.eslib.internal.model.FieldIndexConfig;
+import org.apache.paimon.eslib.internal.model.ScalarFieldType;
+import org.apache.paimon.eslib.internal.model.VectorAlgorithm;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -43,6 +43,7 @@ final class ESIndexFileMeta {
     private static final int MAGIC = 0x45534D31; // "ESM1"
     private static final int VERSION = 2;
     private static final int CONFIG_ONLY_VERSION = 1;
+    private static final int BACKEND_VERSION = 3;
 
     private ESIndexFileMeta() {}
 
@@ -52,6 +53,22 @@ final class ESIndexFileMeta {
             List<String> indexedFieldTypes,
             Map<String, FieldIndexConfig> fieldConfigs)
             throws IOException {
+        return write(
+                files,
+                indexedFieldNames,
+                indexedFieldTypes,
+                fieldConfigs,
+                ESIndexBuilderFactory.ELASTICPP);
+    }
+
+    static byte[] write(
+            File[] files,
+            List<String> indexedFieldNames,
+            List<String> indexedFieldTypes,
+            Map<String, FieldIndexConfig> fieldConfigs,
+            String backend)
+            throws IOException {
+        backend = ESIndexBuilderFactory.backend(backend);
         if (files.length == 0) {
             throw new IOException("Cannot write es-index metadata without Lucene files");
         }
@@ -69,7 +86,9 @@ final class ESIndexFileMeta {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(bytes);
         out.writeInt(MAGIC);
-        out.writeInt(VERSION);
+        // Persist the native backend so table-option changes cannot reinterpret the archive.
+        out.writeInt(BACKEND_VERSION);
+        writeString(out, backend);
         out.writeInt(indexedFieldNames.size());
         for (int i = 0; i < indexedFieldNames.size(); i++) {
             String fieldName = indexedFieldNames.get(i);
@@ -126,8 +145,16 @@ final class ESIndexFileMeta {
         }
 
         int version = in.readInt();
-        if (version != CONFIG_ONLY_VERSION && version != VERSION) {
+        if (version != CONFIG_ONLY_VERSION && version != VERSION && version != BACKEND_VERSION) {
             throw new IOException("Unsupported es-index metadata version: " + version);
+        }
+        String backend = ESIndexBuilderFactory.JAVA;
+        if (version == BACKEND_VERSION) {
+            try {
+                backend = ESIndexBuilderFactory.backend(readString(in));
+            } catch (IllegalArgumentException e) {
+                throw new IOException("Invalid persisted es-index backend", e);
+            }
         }
 
         List<String> indexedFieldNames = new ArrayList<>();
@@ -204,7 +231,7 @@ final class ESIndexFileMeta {
                         "Missing primary field config in es-index metadata: " + fieldName);
             }
         }
-        return new Parsed(indexedFieldNames, indexedFieldTypes, configs, offsets, true);
+        return new Parsed(indexedFieldNames, indexedFieldTypes, configs, offsets, true, backend);
     }
 
     /**
@@ -345,6 +372,7 @@ final class ESIndexFileMeta {
         private final Map<String, FieldIndexConfig> fieldConfigs;
         private final Map<String, long[]> fileOffsets;
         private final boolean hasFieldConfigs;
+        private final String backend;
 
         private Parsed(
                 List<String> indexedFieldNames,
@@ -352,11 +380,28 @@ final class ESIndexFileMeta {
                 Map<String, FieldIndexConfig> fieldConfigs,
                 Map<String, long[]> fileOffsets,
                 boolean hasFieldConfigs) {
+            this(
+                    indexedFieldNames,
+                    indexedFieldTypes,
+                    fieldConfigs,
+                    fileOffsets,
+                    hasFieldConfigs,
+                    ESIndexBuilderFactory.JAVA);
+        }
+
+        private Parsed(
+                List<String> indexedFieldNames,
+                List<String> indexedFieldTypes,
+                Map<String, FieldIndexConfig> fieldConfigs,
+                Map<String, long[]> fileOffsets,
+                boolean hasFieldConfigs,
+                String backend) {
             this.indexedFieldNames = indexedFieldNames;
             this.indexedFieldTypes = indexedFieldTypes;
             this.fieldConfigs = fieldConfigs;
             this.fileOffsets = fileOffsets;
             this.hasFieldConfigs = hasFieldConfigs;
+            this.backend = backend;
         }
 
         List<String> indexedFieldNames() {
@@ -377,6 +422,10 @@ final class ESIndexFileMeta {
 
         boolean hasFieldConfigs() {
             return hasFieldConfigs;
+        }
+
+        String backend() {
+            return backend;
         }
     }
 }

@@ -522,9 +522,8 @@ under the License.
         </profile>
 
         <profile>
-            <!-- paimon-eslib and its external ESLib/Lucene dependencies require Java 11+. Keep
-                 this module opt-in so the default reactor is independent of the external ESLib
-                 repository. Build it explicitly with -Ppaimon-eslib on JDK 11+. -->
+            <!-- The direct native bridge requires Java 11+. Build this optional module
+                 explicitly with -Ppaimon-eslib on JDK 11+. -->
             <id>paimon-eslib</id>
             <modules>
                 <module>paimon-eslib</module>
@@ -634,10 +633,18 @@ under the License.
                                 <pattern>Licensed to the Apache Software Foundation (ASF) under one</pattern>
                             </patterns>
                         </license>
+                        <license implementation="org.apache.rat.analysis.license.SimplePatternBasedLicense">
+                            <licenseFamilyCategory>ELv2</licenseFamilyCategory>
+                            <licenseFamilyName>Elastic License 2.0</licenseFamilyName>
+                            <patterns><pattern>Licensed under the Elastic License 2.0.</pattern></patterns>
+                        </license>
                     </licenses>
                     <licenseFamilies>
                         <licenseFamily implementation="org.apache.rat.license.SimpleLicenseFamily">
                             <familyName>Apache License 2.0</familyName>
+                        </licenseFamily>
+                        <licenseFamily implementation="org.apache.rat.license.SimpleLicenseFamily">
+                            <familyName>Elastic License 2.0</familyName>
                         </licenseFamily>
                     </licenseFamilies>
                     <excludes>
@@ -673,6 +680,8 @@ under the License.
                         <exclude>release/**</exclude>
                         <!-- antlr grammar files -->
                         <exclude>paimon-common/src/main/antlr4/**</exclude>
+                        <!-- Generated provenance for the relocated, licensed native bridge. -->
+                        <exclude>paimon-eslib/src/main/resources/META-INF/paimon-native-provenance.json</exclude>
                         <!-- Binary compatibility fixtures -->
                         <exclude>paimon-common/src/test/resources/fmindex-v1-golden.base64</exclude>
                         <exclude>paimon-core/src/test/resources/compatibility/**</exclude>

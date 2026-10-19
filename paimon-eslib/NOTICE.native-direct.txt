@@ -1,0 +1,14 @@
+Paimon ES native direct adapter
+
+Relocated portions: Licensed under the Elastic License 2.0.
+
+The internal API models and nativeindex implementation were adapted from
+CrownChu/es-paimon-lib at 00b1f46bb49f8159a6dec768d43350f76fba88db.
+Their Elastic License 2.0 notices are retained. The full terms are included
+in LICENSE-ELASTIC-2.0.txt. Existing Apache Paimon source files retain their
+Apache License 2.0 notices. See META-INF/paimon-native-provenance.json for
+source identities and adaptation records.
+
+Elasticsearch
+Copyright 2009-2024 Elasticsearch
+Modifications copyright (C) 2025 Elasticsearch B.V.

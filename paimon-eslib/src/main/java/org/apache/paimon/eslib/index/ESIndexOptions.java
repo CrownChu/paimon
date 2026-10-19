@@ -18,19 +18,16 @@
 
 package org.apache.paimon.eslib.index;
 
+import org.apache.paimon.eslib.internal.model.BuiltinAnalyzer;
+import org.apache.paimon.eslib.internal.model.FieldIndexConfig;
+import org.apache.paimon.eslib.internal.model.ScalarFieldType;
+import org.apache.paimon.eslib.internal.model.VectorAlgorithm;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.types.ArrayType;
 import org.apache.paimon.types.DataField;
 import org.apache.paimon.types.DataType;
 import org.apache.paimon.types.DataTypeRoot;
 import org.apache.paimon.types.VectorType;
-
-import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat;
-import org.elasticsearch.eslib.api.model.BuiltinAnalyzer;
-import org.elasticsearch.eslib.api.model.FieldIndexConfig;
-import org.elasticsearch.eslib.api.model.ScalarFieldType;
-import org.elasticsearch.eslib.api.model.VectorAlgorithm;
-import org.elasticsearch.eslib.diskbbq.es94.ES940DiskBBQVectorsFormat;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -58,7 +55,11 @@ import java.util.Set;
  */
 public class ESIndexOptions {
 
-    private static final int MAX_VECTOR_DIMENSION = 4096;
+    private static final int MAX_VECTOR_DIMENSION = 1024;
+    private static final int MAX_HNSW_CONNECTIONS = 512;
+    private static final int MAX_HNSW_BEAM_WIDTH = 3200;
+    private static final int MIN_CENTROIDS_PER_PARENT_CLUSTER = 2;
+    private static final int MAX_CENTROIDS_PER_PARENT_CLUSTER = 384;
 
     /**
      * Index-type-level key prefix (e.g. {@code global-index.es-index.metric}); overridden by
@@ -84,6 +85,8 @@ public class ESIndexOptions {
     private final Map<String, FieldIndexConfig> fieldConfigs;
 
     public ESIndexOptions(List<DataField> fields, Options options) {
+        ESIndexBuilderFactory.backend(
+                options.getString(INDEX_TYPE_PREFIX + "backend", ESIndexBuilderFactory.ELASTICPP));
         this.fieldConfigs = new LinkedHashMap<>();
         Set<String> logicalFieldNames = new HashSet<>();
         for (DataField field : fields) {
@@ -377,14 +380,9 @@ public class ESIndexOptions {
                         ? resolve(options, fieldName, "ef_construction", null)
                         : resolveField(options, fieldName, "ef_construction");
         if (hnswAlgorithm) {
+            putBoundedPositiveIntegerParameter(params, fieldName, "m", mStr, MAX_HNSW_CONNECTIONS);
             putBoundedPositiveIntegerParameter(
-                    params, fieldName, "m", mStr, Lucene99HnswVectorsFormat.MAXIMUM_MAX_CONN);
-            putBoundedPositiveIntegerParameter(
-                    params,
-                    fieldName,
-                    "ef_construction",
-                    efStr,
-                    Lucene99HnswVectorsFormat.MAXIMUM_BEAM_WIDTH);
+                    params, fieldName, "ef_construction", efStr, MAX_HNSW_BEAM_WIDTH);
         } else if (mStr != null || efStr != null) {
             throw new IllegalArgumentException(
                     "Vector field '"
@@ -418,8 +416,8 @@ public class ESIndexOptions {
                     fieldName,
                     "centroids_per_parent_cluster",
                     cpcStr,
-                    ES940DiskBBQVectorsFormat.MIN_CENTROIDS_PER_PARENT_CLUSTER,
-                    ES940DiskBBQVectorsFormat.MAX_CENTROIDS_PER_PARENT_CLUSTER);
+                    MIN_CENTROIDS_PER_PARENT_CLUSTER,
+                    MAX_CENTROIDS_PER_PARENT_CLUSTER);
         } else if (cpcStr != null) {
             throw new IllegalArgumentException(
                     "Vector field '"
@@ -442,16 +440,7 @@ public class ESIndexOptions {
     }
 
     private static BuiltinAnalyzer parseAnalyzer(String fieldName, String analyzerName) {
-        BuiltinAnalyzer analyzer = BuiltinAnalyzer.fromName(analyzerName);
-        if (analyzer == BuiltinAnalyzer.IK_SMART || analyzer == BuiltinAnalyzer.IK_MAX_WORD) {
-            throw new IllegalArgumentException(
-                    "Analyzer '"
-                            + analyzerName
-                            + "' is not supported by paimon-eslib for field '"
-                            + fieldName
-                            + "'; use standard, whitespace, simple, or keyword.");
-        }
-        return analyzer;
+        return BuiltinAnalyzer.fromName(analyzerName);
     }
 
     private static void putBoundedPositiveIntegerParameter(

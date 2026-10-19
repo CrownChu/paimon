@@ -1,0 +1,6 @@
+/*
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V.
+ * Licensed under the Elastic License 2.0.
+ * Adapted for Paimon; see NOTICE.native-direct.txt.
+ */
+

@@ -18,8 +18,9 @@
 
 package org.apache.paimon.eslib.index;
 
-import org.elasticsearch.eslib.api.model.FullTextParams;
-import org.elasticsearch.eslib.api.model.FullTextQuerySpec;
+import org.apache.paimon.eslib.internal.model.FullTextParams;
+import org.apache.paimon.eslib.internal.model.FullTextQuerySpec;
+
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
