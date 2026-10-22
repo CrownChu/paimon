@@ -12,6 +12,7 @@ import org.apache.paimon.eslib.internal.model.FullTextQuerySpec;
 import org.apache.paimon.eslib.internal.model.IndexFilter;
 import org.apache.paimon.eslib.internal.model.ScalarPredicate;
 import org.apache.paimon.eslib.internal.model.SearchResult;
+import org.apache.paimon.globalindex.EsSearchQuery;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -25,6 +26,11 @@ import java.util.concurrent.ExecutorService;
  * close()
  */
 public interface ESIndexSearcher extends Closeable {
+
+    /** Executes a validated ES DSL request against the loaded native archive. */
+    default SearchResult esSearch(EsSearchQuery query) throws IOException {
+        throw new UnsupportedOperationException("ES DSL search requires the native searcher");
+    }
 
     /**
      * Load index data. Internally decides what to preload vs lazy-load per field config.

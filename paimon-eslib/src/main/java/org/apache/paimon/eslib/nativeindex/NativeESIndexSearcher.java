@@ -14,6 +14,7 @@ import org.apache.paimon.eslib.internal.model.FullTextQuerySpec;
 import org.apache.paimon.eslib.internal.model.IndexFilter;
 import org.apache.paimon.eslib.internal.model.ScalarPredicate;
 import org.apache.paimon.eslib.internal.model.SearchResult;
+import org.apache.paimon.globalindex.EsSearchQuery;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -223,6 +224,25 @@ public final class NativeESIndexSearcher implements ESIndexSearcher {
             source.put("sort", java.util.Collections.singletonList("_doc"));
         }
         SearchResult result = client.query(handle, NativeJson.encode(source), limit, docOrder);
+        return checkedResult(result);
+    }
+
+    @Override
+    public SearchResult esSearch(EsSearchQuery query) throws IOException {
+        requireLoaded();
+        EsSearchQuery physical = query.mapFields(mapping::nativeName);
+        if (manifest.rows == 0) {
+            return SearchResult.EMPTY;
+        }
+        return checkedResult(
+                client.query(
+                        handle,
+                        NativeJson.utf8(physical.searchSourceJson()),
+                        query.limit(),
+                        false));
+    }
+
+    private SearchResult checkedResult(SearchResult result) throws IOException {
         // V1 returns Lucene document positions, already relative to the sealed shard.
         // In contrast, an _id prefilter below addresses the original absolute U64 IDs.
         Set<Long> unique = new HashSet<>();

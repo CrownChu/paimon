@@ -29,6 +29,7 @@ import org.apache.paimon.eslib.internal.model.ScalarFieldType;
 import org.apache.paimon.eslib.internal.model.ScalarPredicate;
 import org.apache.paimon.eslib.internal.model.SearchResult;
 import org.apache.paimon.fs.SeekableInputStream;
+import org.apache.paimon.globalindex.EsSearchQuery;
 import org.apache.paimon.globalindex.GlobalIndexIOMeta;
 import org.apache.paimon.globalindex.GlobalIndexReader;
 import org.apache.paimon.globalindex.GlobalIndexResult;
@@ -518,6 +519,28 @@ public class ESIndexGlobalIndexReader implements GlobalIndexReader {
                         return toScoredResult(result, fullTextSearch.limit());
                     } catch (IOException e) {
                         throw new RuntimeException("Full-text search failed", e);
+                    }
+                });
+    }
+
+    @Override
+    public CompletableFuture<ScoredGlobalIndexResult> visitEsSearch(EsSearchQuery query) {
+        return async(
+                () -> {
+                    try {
+                        EsSearchQuery physical =
+                                query.mapFields(
+                                        logical -> {
+                                            if (incompatibleLogicalFields.contains(logical)) {
+                                                throw incompatibleSearchSchema(logical, "ES DSL");
+                                            }
+                                            return physicalField(logical);
+                                        });
+                        ensureLoaded();
+                        return toScoredResult(searcher.esSearch(physical), query.limit())
+                                .orElseGet(ScoredGlobalIndexResult::createEmpty);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Native ES DSL search failed", e);
                     }
                 });
     }

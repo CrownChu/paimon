@@ -74,6 +74,11 @@ changing a table option cannot convert those files. The original public bridge's
 See the general [Global Index](../docs/docs/multimodal-table/global-index.mdx) documentation for the
 required Data Evolution table properties, coverage/freshness behavior, and shared build options.
 
+Spark SQL can query one grouped native index with
+`paimon_es_search(catalog_name, query_json)`. See the
+[HTML usage guide](docs/paimon-es-search.html) for text and filter-KNN examples, the bounded
+version-1 SEARCH contract, snapshot coverage checks, source decoding and native Spark tests.
+
 ## How columns map to index types
 
 For each indexed column, `es-index` decides the sub-index type from the column data type, unless you
