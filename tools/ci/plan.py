@@ -37,7 +37,7 @@ SUITES = [
     ("e2e-flink1", "E2E / Flink 1 and Spark interoperability", 8, "2.12", 60),
     ("e2e-flink2", "E2E / Flink 2", 11, "2.12", 60),
     ("iceberg", "Iceberg GA / JDK 17", 17, "2.12", 60),
-    ("eslib", "ESLib / JDK 11", 11, "2.12", 30),
+    ("elasticsearch", "Elasticsearch / JDK 11", 11, "2.12", 30),
     ("full-text", "Full text / JDK 8", 8, "2.12", 30),
 ]
 ALL_JAVA = {suite[0] for suite in SUITES}
@@ -98,8 +98,8 @@ def select(paths, full=False):
             selected.update(FLINK | E2E | {"core", "iceberg"})
         elif path.startswith("paimon-e2e-tests/"):
             selected.update(E2E)
-        elif path.startswith("paimon-eslib/"):
-            selected.add("eslib")
+        elif path.startswith("paimon-elasticsearch/"):
+            selected.add("elasticsearch")
         elif path.startswith("paimon-iceberg/"):
             selected.update({"core", "iceberg"})
         elif path.startswith("paimon-full-text/"):

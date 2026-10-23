@@ -522,11 +522,11 @@ under the License.
         </profile>
 
         <profile>
-            <!-- The direct native bridge requires Java 11+. Build this optional module
-                 explicitly with -Ppaimon-eslib on JDK 11+. -->
-            <id>paimon-eslib</id>
+            <!-- The Java Elasticsearch backend and native bridge require Java 11+. Build this optional module
+                 explicitly with -Ppaimon-elasticsearch on JDK 11+. -->
+            <id>paimon-elasticsearch</id>
             <modules>
-                <module>paimon-eslib</module>
+                <module>paimon-elasticsearch</module>
             </modules>
         </profile>
 
@@ -681,7 +681,7 @@ under the License.
                         <!-- antlr grammar files -->
                         <exclude>paimon-common/src/main/antlr4/**</exclude>
                         <!-- Generated provenance for the relocated, licensed native bridge. -->
-                        <exclude>paimon-eslib/src/main/resources/META-INF/paimon-native-provenance.json</exclude>
+                        <exclude>paimon-elasticsearch/src/main/resources/META-INF/paimon-native-provenance.json</exclude>
                         <!-- Binary compatibility fixtures -->
                         <exclude>paimon-common/src/test/resources/fmindex-v1-golden.base64</exclude>
                         <exclude>paimon-core/src/test/resources/compatibility/**</exclude>

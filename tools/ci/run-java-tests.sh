@@ -83,9 +83,13 @@ case "$suite" in
         threads=1C
         goal=test
         ;;
-    eslib)
-        profiles=paimon-eslib
-        modules=(paimon-eslib)
+    elasticsearch)
+        profiles=flink1,spark3,paimon-elasticsearch,java-es-search-tests
+        modules=(paimon-common paimon-elasticsearch paimon-spark/paimon-spark-common
+                 paimon-spark/paimon-spark-ut paimon-flink/paimon-flink-common)
+        test_options+=(-DfailIfNoTests=false
+            -Dtest=EsSearch*Test,ESIndex*Test,Native*Test,PaimonEsSearchProcedureITCase
+            -DwildcardSuites=org.apache.paimon.spark.catalyst.plans.logical.PaimonEsSearchQueryTest,org.apache.paimon.spark.query.PaimonEsSearchJavaTest)
         threads=1
         ;;
     full-text)
@@ -111,12 +115,12 @@ run_maven() {
 
 # -am compiles and installs the selected tests' dependency closure, including
 # test jars. Only the selected modules run tests in the second invocation.
-run_maven -T 2C -B -ntp install -DskipTests -P"$profiles" -pl "$module_list" -am
+run_maven -T 2C -B -ntp install -DskipTests -Dmaven.jar.forceCreation=true -P"$profiles" -pl "$module_list" -am
 
 jvm_timezone=GMT+00:00
 if [[ "${CI_DRY_RUN:-false}" != true ]]; then
     # Preserve the native-library setup used by the original engine/core lanes.
-    if [[ "$suite" != eslib && "$suite" != full-text ]]; then
+    if [[ "$suite" != elasticsearch && "$suite" != full-text ]]; then
         . tools/ci/utils.sh
         jvm_timezone=$(random_timezone)
     fi
