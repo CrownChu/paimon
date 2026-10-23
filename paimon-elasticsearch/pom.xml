@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <artifactId>paimon-parent</artifactId>
+        <groupId>org.apache.paimon</groupId>
+        <version>2.2-SNAPSHOT</version>
+    </parent>
+    <artifactId>paimon-elasticsearch</artifactId>
+    <name>Paimon : Elasticsearch Index</name>
+    <properties>
+        <!-- Java ESLib/Lucene and the optional native bridge require Java 11+. -->
+        <target.java.version>11</target.java.version>
+        <paimon.es.test.classes>test-classes</paimon.es.test.classes>
+        <jna.version>5.14.0</jna.version>
+        <eslib.version>1.0.7</eslib.version>
+        <lucene.version>9.12.0</lucene.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-common</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.paimon.eslib</groupId>
+            <artifactId>eslib-core-lucene9</artifactId>
+            <version>${eslib.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.aliyun.oss</groupId>
+                    <artifactId>aliyun-sdk-oss</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>io.github.paimon.eslib</groupId>
+            <artifactId>eslib-simdvec-lucene9</artifactId>
+            <version>${eslib.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>${jna.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.paimon</groupId>
+            <artifactId>paimon-common</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.36</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Test -->
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-hdfs-client</artifactId>
+            <version>${hadoop.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.paimon</groupId>
+            <artifactId>paimon-core</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.paimon</groupId>
+            <artifactId>paimon-format</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-mapreduce-client-core</artifactId>
+            <version>${hadoop.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.avro</groupId>
+                    <artifactId>avro</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.protobuf</groupId>
+                    <artifactId>protobuf-java</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>ch.qos.reload4j</groupId>
+                    <artifactId>reload4j</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-reload4j</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-log4j12</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>jdk.tools</groupId>
+                    <artifactId>jdk.tools</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.paimon</groupId>
+            <artifactId>paimon-common</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Provides TestLoggerExtension, auto-registered via the JUnit extension SPI that the
+             paimon-common test-jar declares; without it surefire fails to load the extension. -->
+        <dependency>
+            <groupId>org.apache.paimon</groupId>
+            <artifactId>paimon-test-utils</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+        <license>
+            <name>Elastic License 2.0 (relocated native bridge and internal models)</name>
+            <url>https://www.elastic.co/licensing/elastic-license</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <build>
+        <testOutputDirectory>${project.build.directory}/${paimon.es.test.classes}</testOutputDirectory>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE-ELASTIC-2.0.txt</include>
+                    <include>NOTICE.native-direct.txt</include>
+                </includes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <configuration>
+                    <testSourceDirectories>
+                        <testSourceDirectory>${project.basedir}/src/test/java</testSourceDirectory>
+                        <testSourceDirectory>${project.basedir}/src/nativeTest/java</testSourceDirectory>
+                    </testSourceDirectories>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <configuration>
+                    <java combine.self="override">
+                        <includes>
+                            <include>src/main/java/**/*.java</include>
+                            <include>src/test/java/**/*.java</include>
+                            <include>src/nativeTest/java/**/*.java</include>
+                        </includes>
+                        <googleJavaFormat>
+                            <version>1.7</version>
+                            <style>AOSP</style>
+                        </googleJavaFormat>
+                        <importOrder>
+                            <order>org.apache.paimon,org.apache.paimon.shade,,javax,java,scala,\#</order>
+                        </importOrder>
+                        <removeUnusedImports/>
+                    </java>
+                    <formats>
+                        <format>
+                            <includes>
+                                <include>src/main/java/org/apache/paimon/eslib/index/**/*.java</include>
+                                <include>src/test/java/org/apache/paimon/eslib/index/**/*.java</include>
+                                <include>src/nativeTest/java/org/apache/paimon/eslib/index/**/*.java</include>
+                            </includes>
+                            <licenseHeader>
+                                <file>${maven.multiModuleProjectDirectory}/copyright.txt</file>
+                                <delimiter>package</delimiter>
+                            </licenseHeader>
+                        </format>
+                        <format>
+                            <includes>
+                                <include>src/**/java/org/apache/paimon/eslib/internal/**/*.java</include>
+                                <include>src/**/java/org/apache/paimon/eslib/nativeindex/**/*.java</include>
+                            </includes>
+                            <licenseHeader>
+                                <file>${project.basedir}/copyright-native.txt</file>
+                                <delimiter>package</delimiter>
+                            </licenseHeader>
+                        </format>
+                    </formats>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <profiles>
+        <profile>
+            <id>native-runtime</id>
+            <properties>
+                <!-- Runtime bundles remain local candidates until distribution is qualified. -->
+                <maven.deploy.skip>true</maven.deploy.skip>
+                <paimon.es.test.classes>native-test-classes</paimon.es.test.classes>
+            </properties>
+            <activation>
+                <property>
+                    <name>paimon.es.native.bundle</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>3.6.1</version>
+                        <executions>
+                            <execution>
+                                <id>native-integration-sources</id>
+                                <phase>generate-test-sources</phase>
+                                <goals>
+                                    <goal>add-test-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/nativeTest/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>prepare-native-runtime</id>
+                                <phase>generate-test-resources</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <available file="${paimon.es.native.bundle}/native-manifest.json" type="file" property="paimon.native.manifest.present"/>
+                                        <fail unless="paimon.native.manifest.present" message="paimon.es.native.bundle must contain the verified native-manifest.json and its runtime libraries"/>
+                                        <mkdir dir="${project.build.directory}/native-runtime/META-INF/native/linux-x86_64"/>
+                                        <copy todir="${project.build.directory}/native-runtime/META-INF/native/linux-x86_64">
+                                            <fileset dir="${paimon.es.native.bundle}">
+                                                <include name="native-manifest.json"/>
+                                                <include name="*.so"/>
+                                                <include name="*.so.*"/>
+                                            </fileset>
+                                        </copy>
+                                        <copy todir="${project.build.testOutputDirectory}">
+                                            <fileset dir="${project.build.directory}/native-runtime"/>
+                                        </copy>
+                                        <mkdir dir="${project.build.directory}/native-test-config/analysis-ik"/>
+                                        <echo file="${project.build.directory}/native-test-config/analysis-ik/main.dic" encoding="UTF-8">中华人民共和国
+中华
+人民
+共和国
+</echo>
+                                        <echo file="${project.build.directory}/native-test-config/analysis-ik/quantifier.dic" encoding="UTF-8">个
+米
+</echo>
+                                        <echo file="${project.build.directory}/native-test-config/analysis-ik/stopword.dic" encoding="UTF-8">的
+</echo>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <environmentVariables>
+                                <ES_PATH_CONF>${project.build.directory}/native-test-config</ES_PATH_CONF>
+                            </environmentVariables>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <version>3.4.2</version>
+                        <executions>
+                            <execution>
+                                <id>attach-native-runtime</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                                <configuration>
+                                    <classifier>linux-x86_64-native</classifier>
+                                    <classesDirectory>${project.build.directory}/native-runtime</classesDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+    <repositories>
+        <repository>
+            <id>eslib-github</id>
+            <url>https://raw.githubusercontent.com/CrownChu/es-paimon-lib-releases/eslib-${eslib.version}/repository</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
+</project>

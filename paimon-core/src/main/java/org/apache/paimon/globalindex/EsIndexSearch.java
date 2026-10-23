@@ -19,6 +19,8 @@
 package org.apache.paimon.globalindex;
 
 import org.apache.paimon.Snapshot;
+import org.apache.paimon.catalog.Catalog;
+import org.apache.paimon.catalog.Identifier;
 import org.apache.paimon.catalog.TableQueryAuthResult;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.data.serializer.InternalRowSerializer;
@@ -32,6 +34,7 @@ import org.apache.paimon.manifest.IndexManifestEntry;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.SpecialFields;
+import org.apache.paimon.table.Table;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.table.source.ReadBuilder;
 import org.apache.paimon.table.source.ScanMode;
@@ -52,6 +55,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Set;
 
 import static org.apache.paimon.globalindex.EsSearchQuery.require;
@@ -59,6 +63,109 @@ import static org.apache.paimon.globalindex.EsSearchQuery.require;
 /** Fixed-snapshot, index-only ES search planning, independent of a particular engine. */
 public final class EsIndexSearch {
     private EsIndexSearch() {}
+
+    /** Java SDK entry point. The index metadata selects the Java or native reader. */
+    public static EsSearchResult search(Catalog catalog, String envelope) throws Exception {
+        Execution execution = prepare(catalog, envelope);
+        TopK top = new TopK(execution.query.limit());
+        for (Shard shard : execution.plan.shards) {
+            top.addAll(shard.search(execution.query));
+        }
+        return execution.finish(top.hits());
+    }
+
+    public static Execution prepare(Catalog catalog, String envelope)
+            throws Catalog.TableNotExistException {
+        EsSearchRequest request = EsSearchRequest.parse(envelope);
+        Table table = catalog.getTable(Identifier.create(request.database, request.table));
+        require(
+                table instanceof FileStoreTable,
+                "paimon_es_search requires a Paimon file-store table");
+        return prepare((FileStoreTable) table, request);
+    }
+
+    public static Execution prepare(FileStoreTable original, EsSearchRequest request) {
+        FileStoreTable table =
+                request.snapshotId == null
+                        ? original
+                        : original.copy(
+                                Collections.singletonMap(
+                                        "scan.snapshot-id", request.snapshotId.toString()));
+        Plan plan = plan(table, request.indexFields);
+        Map<Integer, String> fields = new HashMap<>();
+        for (DataField field : plan.table.rowType().getFields()) {
+            fields.put(field.id(), field.name());
+        }
+        EsSearchQuery query =
+                request.query.mapFields(alias -> fields.get(request.bindings.get(alias)));
+        return new Execution(request, plan, query);
+    }
+
+    /** A prepared query can be scheduled by an engine or executed locally by the Java SDK. */
+    public static final class Execution {
+        public final EsSearchRequest request;
+        public final Plan plan;
+        public final EsSearchQuery query;
+
+        private Execution(EsSearchRequest request, Plan plan, EsSearchQuery query) {
+            this.request = request;
+            this.plan = plan;
+            this.query = query;
+        }
+
+        /** Finish a globally reduced window, apply pagination once, and fetch the pinned source. */
+        public EsSearchResult finish(List<Hit> window) throws Exception {
+            require(window.size() <= query.limit(), "ES search result window overflow");
+            List<Hit> ordered = new ArrayList<>(window);
+            ordered.sort(EsIndexSearch::compareHits);
+            Set<Long> ids = new HashSet<>();
+            for (Hit hit : ordered) {
+                require(
+                        hit.rowId >= 0 && Float.isFinite(hit.score) && ids.add(hit.rowId),
+                        "Invalid or repeated global result row ID");
+            }
+            List<Hit> selected =
+                    new ArrayList<>(
+                            ordered.subList(
+                                    Math.min(request.from, ordered.size()),
+                                    Math.min(request.from + request.size, ordered.size())));
+            return new EsSearchResult(request, plan, selected);
+        }
+    }
+
+    public static int compareHits(Hit a, Hit b) {
+        int score = Float.compare(b.score, a.score);
+        return score == 0 ? Long.compare(a.rowId, b.rowId) : score;
+    }
+
+    /** Bounded global reduction shared by the Java SDK and Flink workers/coordinator. */
+    public static final class TopK {
+        private final int limit;
+        private final PriorityQueue<Hit> queue;
+
+        public TopK(int limit) {
+            require(limit > 0 && limit <= EsSearchQuery.MAX_WINDOW, "Invalid top-K limit");
+            this.limit = limit;
+            this.queue = new PriorityQueue<>((a, b) -> compareHits(b, a));
+        }
+
+        public void addAll(Iterable<Hit> hits) {
+            for (Hit hit : hits) {
+                if (queue.size() < limit) {
+                    queue.add(hit);
+                } else if (compareHits(hit, queue.peek()) < 0) {
+                    queue.poll();
+                    queue.add(hit);
+                }
+            }
+        }
+
+        public List<Hit> hits() {
+            List<Hit> result = new ArrayList<>(queue);
+            result.sort(EsIndexSearch::compareHits);
+            return result;
+        }
+    }
 
     /** No native library is loaded while planning. The table retains catalog-supplied FileIO. */
     public static Plan plan(FileStoreTable original, List<Integer> indexFields) {
@@ -227,18 +334,18 @@ public final class EsIndexSearch {
                 for (long relative : result.results()) {
                     require(
                             relative >= 0 && relative <= to - from,
-                            "Native ES search returned an invalid relative row ID");
+                            "ES search returned an invalid relative row ID");
                     float score = result.scoreGetter().score(relative);
-                    require(Float.isFinite(score), "Native ES search returned a nonfinite score");
+                    require(Float.isFinite(score), "ES search returned a nonfinite score");
                     hits.add(new Hit(Math.addExact(from, relative), score));
                 }
-                require(hits.size() <= query.limit(), "Native ES result window overflow");
+                require(hits.size() <= query.limit(), "ES result window overflow");
                 return hits;
             }
         }
     }
 
-    /** Native score and absolute Paimon row identity returned by an executor. */
+    /** Index score and absolute Paimon row identity returned by an executor. */
     public static final class Hit implements Serializable {
         private static final long serialVersionUID = 1L;
         public final long rowId;
